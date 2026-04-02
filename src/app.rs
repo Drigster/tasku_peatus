@@ -176,22 +176,19 @@ impl App for MyApp {
 
                     if cur_departures_next_update <= Utc::now() {
                         println!("[Print] Updating departures");
-                        let stops_departures = match get_departures(
-                            stops_radius
-                                .read()
-                                .cloned()
-                                .iter()
-                                .filter_map(|e| {
-                                    if e.siri_id.is_empty() {
-                                        None
-                                    } else {
-                                        Some(e.siri_id.clone())
-                                    }
-                                })
-                                .collect(),
-                        )
-                        .await
-                        {
+                        let stops_radius = stops_radius
+                            .read()
+                            .cloned()
+                            .iter()
+                            .filter_map(|e| {
+                                if e.siri_id.is_empty() {
+                                    None
+                                } else {
+                                    Some(e.siri_id.clone())
+                                }
+                            })
+                            .collect();
+                        let stops_departures = match get_departures(stops_radius).await {
                             Ok(stops_departures) => stops_departures,
                             Err(e) => {
                                 log::error!("Error getting departures: {e}");
