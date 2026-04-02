@@ -1,0 +1,9 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "cargo ndk": true,
+        "/^\\./gradlew :app:compileDebugJavaWithJavac$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
