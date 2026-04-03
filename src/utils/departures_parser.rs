@@ -1,4 +1,4 @@
-use std::{collections::HashMap, u32, vec};
+use std::{collections::HashMap, vec};
 
 use crate::utils::text_utils::parse_csv_line;
 use blocking::unblock;
@@ -112,7 +112,7 @@ pub async fn get_departures(
 
                     let current_departures =
                         departures.entry(current_stop.clone().unwrap()).or_default();
-                    if let Some(departure) = current_departures.into_iter().find(|e| {
+                    if let Some(departure) = current_departures.iter_mut().find(|e| {
                         e.departure_type == departure_type
                             && e.route == route
                             && e.direction == direction

@@ -1,26 +1,49 @@
+#[cfg(target_os = "android")]
 use chrono::{DateTime, Utc};
+#[cfg(target_os = "android")]
 use freya::{
     prelude::*,
     radio::{RadioChannel, RadioStation},
 };
+#[cfg(target_os = "android")]
 use smol::stream::StreamExt;
+#[cfg(target_os = "android")]
 use std::collections::HashMap;
 
+#[cfg(target_os = "android")]
 mod app;
+#[cfg(target_os = "android")]
 mod components;
+#[cfg(target_os = "android")]
 mod layouts;
+#[cfg(target_os = "android")]
 mod pages;
+#[cfg(target_os = "android")]
 mod utils;
-
+#[cfg(target_os = "android")]
 use app::MyApp;
 
+#[cfg(target_os = "android")]
 use crate::utils::{departures_parser::Departure, stops_parser::Stop};
 
+#[cfg(target_os = "android")]
 pub static APP_DIR_NAME: &str = "TaskuPeatus";
 
-#[allow(dead_code)]
-fn main() {
-    env_logger::init();
+#[cfg(target_os = "android")]
+use winit::platform::android::activity::AndroidApp;
+
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+fn android_main(droid_app: AndroidApp) {
+    use freya_winit::renderer::NativeEvent;
+    use winit::{event_loop::EventLoop, platform::android::EventLoopBuilderExtAndroid};
+
+    android_logger::init_once(
+        android_logger::Config::default().with_max_level(log::LevelFilter::Debug),
+    );
+
+    let mut event_loop_builder = EventLoop::<NativeEvent>::with_user_event();
+    event_loop_builder.with_android_app(droid_app);
 
     let mut radio_station = RadioStation::create_global(Data::default());
 
@@ -46,10 +69,11 @@ fn main() {
                     }
                 }
             })
-            .with_window(WindowConfig::new_app(MyApp { radio_station }).with_size(420.0, 900.0)),
+            .with_window(WindowConfig::new_app(MyApp { radio_station }).with_size(500.0, 450.0))
+            .with_event_loop_builder(event_loop_builder),
     )
 }
-
+#[cfg(target_os = "android")]
 #[derive(Debug, Clone)]
 pub enum ErrorState {
     NoPermissions,
@@ -57,7 +81,7 @@ pub enum ErrorState {
     NoLocation(String),
     StopsUpdateError(String),
 }
-
+#[cfg(target_os = "android")]
 #[derive(Default, Clone)]
 pub struct Data {
     stops: Vec<Stop>,
@@ -72,7 +96,7 @@ pub struct Data {
 
     state_tx: Option<futures_channel::mpsc::UnboundedSender<ChannelSend>>,
 }
-
+#[cfg(target_os = "android")]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum DataChannel {
     NoUpdate,
@@ -85,9 +109,9 @@ pub enum DataChannel {
     LocationEnabledUpdate,
     ErrorStateUpdate,
 }
-
+#[cfg(target_os = "android")]
 impl RadioChannel<Data> for DataChannel {}
-
+#[cfg(target_os = "android")]
 pub enum ChannelSend {
     LocationUpdate((f64, f64)),
     LocationEnabledUpdate(bool),

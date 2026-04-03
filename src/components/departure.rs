@@ -28,7 +28,6 @@ impl Component for DepartureComponent {
 
         use_hook(|| {
             spawn({
-                let mut departure_time = departure_time.clone();
                 async move {
                     loop {
                         smol::Timer::after(Duration::from_secs(1)).await;

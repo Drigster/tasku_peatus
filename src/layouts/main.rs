@@ -21,11 +21,10 @@ impl Component for AppLayout {
 
         println!("[Print] Offsets {:?}", offsets);
 
-        let mut scale_factor: State<f32> = use_state(|| 2.625);
+        let scale_factor: State<f32> = use_state(|| 2.625);
 
-        let mut radio = use_radio(DataChannel::LocationUpdate);
+        let radio = use_radio(DataChannel::LocationUpdate);
 
-        let location = radio.slice_current(|s| &s.location);
         let is_location_enabled = radio.slice(DataChannel::LocationEnabledUpdate, |s| {
             &s.is_location_enabled
         });
@@ -81,14 +80,14 @@ impl Component for AppLayout {
                         } else {
                             None
                         })
-                        .child(
+                        .maybe_child(error_state.read().cloned().map(|error_state| {
                             rect()
                                 .width(Size::Fill)
                                 .height(Size::px(60.0))
                                 .background(Color::from_hex("#FF000080").unwrap())
                                 .center()
-                                .child(label().text(format!("{:?}", error_state.read()))),
-                        ),
+                                .child(label().text(format!("{:?}", error_state)))
+                        })),
                 ),
         )
     }

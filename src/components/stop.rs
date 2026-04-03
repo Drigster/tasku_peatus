@@ -5,10 +5,7 @@ use freya::{
     radio::use_radio,
 };
 
-use crate::{
-    DataChannel,
-    components::{DepartureComponent, departure},
-};
+use crate::{DataChannel, components::DepartureComponent};
 
 #[derive(Clone, PartialEq)]
 pub struct StopComponent {

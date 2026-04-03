@@ -9,7 +9,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{LazyLock, Mutex};
 
-type LocationCallback = Box<dyn FnOnce(Option<(f64, f64, f32)>) + Send>;
 type LocationUpdatesCallback = Box<dyn Fn((f64, f64, f32)) + Send + Sync>;
 type LocationEnabledCallback = Box<dyn Fn(bool) + Send + Sync>;
 
@@ -263,124 +262,39 @@ where
     Ok(callback_ptr)
 }
 
-pub fn stop_location_enabled_updates(callback_ptr: i64) -> Result<(), Box<dyn std::error::Error>> {
-    let ctx = ndk_context::android_context();
-    let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
-    let mut env = vm.attach_current_thread()?;
-    let context = unsafe { JObject::from_raw(ctx.context().cast()) };
+// pub fn stop_location_enabled_updates(callback_ptr: i64) -> Result<(), Box<dyn std::error::Error>> {
+//     let ctx = ndk_context::android_context();
+//     let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
+//     let mut env = vm.attach_current_thread()?;
+//     let context = unsafe { JObject::from_raw(ctx.context().cast()) };
 
-    let class_loader = env
-        .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
-        .l()?;
-    let helper_class_name = env.new_string("com.freya.androidapp.RustLocationHelper")?;
-    let helper_class_obj = env
-        .call_method(
-            &class_loader,
-            "loadClass",
-            "(Ljava/lang/String;)Ljava/lang/Class;",
-            &[JValue::Object(&helper_class_name)],
-        )?
-        .l()?;
-    let helper_class = JClass::from(helper_class_obj);
+//     let class_loader = env
+//         .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+//         .l()?;
+//     let helper_class_name = env.new_string("com.freya.androidapp.RustLocationHelper")?;
+//     let helper_class_obj = env
+//         .call_method(
+//             &class_loader,
+//             "loadClass",
+//             "(Ljava/lang/String;)Ljava/lang/Class;",
+//             &[JValue::Object(&helper_class_name)],
+//         )?
+//         .l()?;
+//     let helper_class = JClass::from(helper_class_obj);
 
-    env.call_static_method(
-        helper_class,
-        "stopLocationEnabledUpdates",
-        "(Landroid/content/Context;J)V",
-        &[JValue::Object(&context), JValue::Long(callback_ptr)],
-    )?;
+//     env.call_static_method(
+//         helper_class,
+//         "stopLocationEnabledUpdates",
+//         "(Landroid/content/Context;J)V",
+//         &[JValue::Object(&context), JValue::Long(callback_ptr)],
+//     )?;
 
-    unsafe {
-        drop(Box::from_raw(callback_ptr as *mut LocationEnabledCallback));
-    }
+//     unsafe {
+//         drop(Box::from_raw(callback_ptr as *mut LocationEnabledCallback));
+//     }
 
-    Ok(())
-}
-
-pub fn request_fresh_location<F>(callback: F) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: FnOnce(Option<(f64, f64, f32)>) + Send + 'static,
-{
-    let ctx = ndk_context::android_context();
-    let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
-    let mut env = vm.attach_current_thread()?;
-    let context = unsafe { JObject::from_raw(ctx.context().cast()) };
-
-    // Get LocationManager
-    let location_service = env.new_string("location")?;
-    let location_manager = env
-        .call_method(
-            &context,
-            "getSystemService",
-            "(Ljava/lang/String;)Ljava/lang/Object;",
-            &[JValue::Object(&location_service)],
-        )?
-        .l()?;
-
-    // Create callback pointer
-    let callback_box: Box<LocationCallback> = Box::new(Box::new(callback));
-    let callback_ptr = Box::into_raw(callback_box) as i64;
-
-    let setup_result: Result<(), jni::errors::Error> = (|| {
-        // Create Consumer using helper (all in same scope)
-        let class_loader = env
-            .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
-            .l()?;
-        let helper_class_name = env.new_string("com.freya.androidapp.RustLocationHelper")?;
-        let helper_class_obj = env
-            .call_method(
-                &class_loader,
-                "loadClass",
-                "(Ljava/lang/String;)Ljava/lang/Class;",
-                &[JValue::Object(&helper_class_name)],
-            )?
-            .l()?;
-        let helper_class = JClass::from(helper_class_obj);
-        let consumer = env
-            .call_static_method(
-                helper_class,
-                "createLocationConsumer",
-                "(J)Ljava/util/function/Consumer;",
-                &[JValue::Long(callback_ptr)],
-            )?
-            .l()?;
-
-        // Get executor (all in same scope)
-        let executor = env
-            .call_method(
-                &context,
-                "getMainExecutor",
-                "()Ljava/util/concurrent/Executor;",
-                &[],
-            )?
-            .l()?;
-
-        // Call getCurrentLocation
-        let provider = env.new_string("gps")?;
-        env.call_method(
-            &location_manager,
-            "getCurrentLocation",
-            "(Ljava/lang/String;Landroid/os/CancellationSignal;Ljava/util/concurrent/Executor;Ljava/util/function/Consumer;)V",
-            &[
-                JValue::Object(&provider),
-                JValue::Object(&JObject::null()),
-                JValue::Object(&executor),
-                JValue::Object(&consumer),
-            ],
-        )?;
-
-        Ok(())
-    })();
-
-    if let Err(err) = setup_result {
-        unsafe {
-            drop(Box::from_raw(callback_ptr as *mut LocationCallback));
-        }
-        return Err(Box::new(err));
-    }
-
-    Ok(())
-}
+//     Ok(())
+// }
 
 pub fn start_location_updates<F>(callback: F) -> Result<i64, Box<dyn std::error::Error>>
 where
@@ -429,39 +343,39 @@ where
     Ok(callback_ptr)
 }
 
-pub fn stop_location_updates(callback_ptr: i64) -> Result<(), Box<dyn std::error::Error>> {
-    let ctx = ndk_context::android_context();
-    let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
-    let mut env = vm.attach_current_thread()?;
-    let context = unsafe { JObject::from_raw(ctx.context().cast()) };
+// pub fn stop_location_updates(callback_ptr: i64) -> Result<(), Box<dyn std::error::Error>> {
+//     let ctx = ndk_context::android_context();
+//     let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
+//     let mut env = vm.attach_current_thread()?;
+//     let context = unsafe { JObject::from_raw(ctx.context().cast()) };
 
-    let class_loader = env
-        .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
-        .l()?;
-    let helper_class_name = env.new_string("com.freya.androidapp.RustLocationHelper")?;
-    let helper_class_obj = env
-        .call_method(
-            &class_loader,
-            "loadClass",
-            "(Ljava/lang/String;)Ljava/lang/Class;",
-            &[JValue::Object(&helper_class_name)],
-        )?
-        .l()?;
-    let helper_class = JClass::from(helper_class_obj);
+//     let class_loader = env
+//         .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+//         .l()?;
+//     let helper_class_name = env.new_string("com.freya.androidapp.RustLocationHelper")?;
+//     let helper_class_obj = env
+//         .call_method(
+//             &class_loader,
+//             "loadClass",
+//             "(Ljava/lang/String;)Ljava/lang/Class;",
+//             &[JValue::Object(&helper_class_name)],
+//         )?
+//         .l()?;
+//     let helper_class = JClass::from(helper_class_obj);
 
-    env.call_static_method(
-        helper_class,
-        "stopLocationUpdates",
-        "(Landroid/content/Context;J)V",
-        &[JValue::Object(&context), JValue::Long(callback_ptr)],
-    )?;
+//     env.call_static_method(
+//         helper_class,
+//         "stopLocationUpdates",
+//         "(Landroid/content/Context;J)V",
+//         &[JValue::Object(&context), JValue::Long(callback_ptr)],
+//     )?;
 
-    unsafe {
-        drop(Box::from_raw(callback_ptr as *mut LocationUpdatesCallback));
-    }
+//     unsafe {
+//         drop(Box::from_raw(callback_ptr as *mut LocationUpdatesCallback));
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_freya_androidapp_RustLocationHelper_onLocationResult(
@@ -514,10 +428,10 @@ pub extern "system" fn Java_com_freya_androidapp_RustLocationHelper_onPermission
     callback_ptr: i64,
     granted: bool,
 ) {
-    if let Ok(mut requests) = PERMISSION_REQUESTS.lock() {
-        if let Some(sender) = requests.remove(&callback_ptr) {
-            let _ = sender.send(granted);
-        }
+    if let Ok(mut requests) = PERMISSION_REQUESTS.lock()
+        && let Some(sender) = requests.remove(&callback_ptr)
+    {
+        let _ = sender.send(granted);
     }
 }
 

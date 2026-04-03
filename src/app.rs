@@ -1,10 +1,4 @@
-#[cfg(target_os = "android")]
-use std::sync::atomic::Ordering;
-use std::{
-    collections::HashMap,
-    sync::{Arc, atomic::AtomicBool},
-    time::Duration,
-};
+use std::{collections::HashMap, time::Duration};
 
 use chrono::Utc;
 use freya::{
@@ -15,13 +9,13 @@ use freya::{
 use freya_router::prelude::Router;
 
 use crate::{
-    ChannelSend, Data, DataChannel, ErrorState,
-    utils::{departures_parser::get_departures, stops_parser},
+    Data, DataChannel,
+    utils::{
+        departures_parser::get_departures,
+        stops_parser::{self, Stop},
+    },
 };
-use crate::{
-    layouts::AppLayout,
-    pages::{Loading, Timetable},
-};
+use crate::{layouts::AppLayout, pages::Timetable};
 
 pub const CUSTOM_THEME: Theme = Theme {
     name: "custom",
@@ -45,10 +39,7 @@ impl App for MyApp {
         use_init_theme(|| CUSTOM_THEME);
 
         let mut radio = use_radio(DataChannel::NoUpdate);
-        let state_tx = radio.read().state_tx.clone().unwrap();
         let location = radio.slice(DataChannel::LocationUpdate, |s| &s.location);
-        let mut error_state =
-            radio.slice_mut(DataChannel::ErrorStateUpdate, |s| &mut s.error_state);
         let mut stops = radio.slice_mut(DataChannel::StopsUpdate, |s| &mut s.stops);
         let mut stops_radius =
             radio.slice_mut(DataChannel::StopsRadiusUpdate, |s| &mut s.stops_radius);
@@ -57,69 +48,76 @@ impl App for MyApp {
         });
         let mut departures = radio.slice_mut(DataChannel::DeparturesUpdate, |s| &mut s.departures);
 
-        let state_tx_clone = state_tx.clone();
         #[cfg(target_os = "android")]
-        use_hook(move || {
-            use crate::utils::jni_utils::start_location_enabled_updates;
+        {
+            use crate::ChannelSend;
 
-            match start_location_enabled_updates(move |enabled| {
-                println!("[Print] Location enabled changed: {enabled}");
-                let _ = state_tx_clone.unbounded_send(ChannelSend::LocationEnabledUpdate(enabled));
-            }) {
-                Ok(callback_ptr) => {
-                    println!("[Print] Location enabled watcher started: {callback_ptr}");
-                }
-                Err(e) => {
-                    println!("[Print] Failed to start location enabled watcher: {e}");
-                }
-            }
-        });
+            let state_tx = radio.read().state_tx.clone().unwrap();
+            let state_tx_clone = state_tx.clone();
+            use_hook(move || {
+                use crate::ChannelSend;
+                use crate::utils::jni_utils::start_location_enabled_updates;
 
-        #[cfg(target_os = "android")]
-        use_hook(|| {
-            spawn(async move {
-                use crate::utils::jni_utils::{
-                    check_and_request_permissions, get_last_known_location, start_location_updates,
-                };
-
-                match check_and_request_permissions().await {
-                    Ok(true) => {
-                        match get_last_known_location() {
-                            Ok(last_known_location) => {
-                                println!("[Print] Location: {:?}", last_known_location);
-                                let _ = state_tx.unbounded_send(ChannelSend::LocationUpdate((
-                                    last_known_location.0,
-                                    last_known_location.1,
-                                )));
-                            }
-                            Err(e) => {
-                                println!("[Print] Error getting location: {e}");
-                            }
-                        }
-                        match start_location_updates(move |(lat, lng, accuracy)| {
-                            println!(
-                                "[Print] Location changed: lat={lat}, lng={lng}, accuracy={accuracy}"
-                            );
-                            let _ =
-                                state_tx.unbounded_send(ChannelSend::LocationUpdate((lat, lng)));
-                        }) {
-                            Ok(callback_ptr) => {
-                                println!("[Print] Location updates started: {callback_ptr}");
-                            }
-                            Err(e) => {
-                                println!("[Print] Error starting location updates: {e}");
-                            }
-                        }
-                    }
-                    Ok(false) => {
-                        println!("[Print] Permissions: false");
+                match start_location_enabled_updates(move |enabled| {
+                    println!("[Print] Location enabled changed: {enabled}");
+                    let _ =
+                        state_tx_clone.unbounded_send(ChannelSend::LocationEnabledUpdate(enabled));
+                }) {
+                    Ok(callback_ptr) => {
+                        println!("[Print] Location enabled watcher started: {callback_ptr}");
                     }
                     Err(e) => {
-                        println!("[Print] Error checking permissions: {e}");
+                        println!("[Print] Failed to start location enabled watcher: {e}");
                     }
                 }
             });
-        });
+
+            use_hook(|| {
+                spawn(async move {
+                    use crate::utils::jni_utils::{
+                        check_and_request_permissions, get_last_known_location,
+                        start_location_updates,
+                    };
+
+                    match check_and_request_permissions().await {
+                        Ok(true) => {
+                            match get_last_known_location() {
+                                Ok(last_known_location) => {
+                                    println!("[Print] Location: {:?}", last_known_location);
+                                    let _ = state_tx.unbounded_send(ChannelSend::LocationUpdate((
+                                        last_known_location.0,
+                                        last_known_location.1,
+                                    )));
+                                }
+                                Err(e) => {
+                                    println!("[Print] Error getting location: {e}");
+                                }
+                            }
+                            match start_location_updates(move |(lat, lng, accuracy)| {
+                                println!(
+                                    "[Print] Location changed: lat={lat}, lng={lng}, accuracy={accuracy}"
+                                );
+                                let _ = state_tx
+                                    .unbounded_send(ChannelSend::LocationUpdate((lat, lng)));
+                            }) {
+                                Ok(callback_ptr) => {
+                                    println!("[Print] Location updates started: {callback_ptr}");
+                                }
+                                Err(e) => {
+                                    println!("[Print] Error starting location updates: {e}");
+                                }
+                            }
+                        }
+                        Ok(false) => {
+                            println!("[Print] Permissions: false");
+                        }
+                        Err(e) => {
+                            println!("[Print] Error checking permissions: {e}");
+                        }
+                    }
+                });
+            });
+        }
 
         use_hook(|| {
             spawn(async move {
@@ -136,15 +134,16 @@ impl App for MyApp {
                     println!("[Print] Loop");
                     let location = location.read().cloned();
                     if location.is_none() {
-                        next_update = next_update + Duration::from_millis(100);
+                        next_update += Duration::from_millis(100);
                         continue;
                     }
-                    next_update = next_update + Duration::from_secs(5);
+                    next_update += Duration::from_secs(5);
 
-                    if location.is_some() && location != last_location {
-                        println!("[Print] Location changed: {:?}", location);
+                    if let Some(current_location) = location
+                        && location != last_location
+                    {
+                        println!("[Print] Location changed: {:?}", current_location);
                         last_location = location;
-                        let location = location.unwrap();
                         println!("[Print] Updating stops");
                         let mut cur_stops = stops.read().clone();
                         if cur_stops.is_empty() {
@@ -154,10 +153,13 @@ impl App for MyApp {
                         }
 
                         let (new_stops_radius, new_stops_distances): (
-                            Vec<stops_parser::Stop>,
+                            HashMap<String, Stop>,
                             HashMap<String, u64>,
                         ) = stops_parser::get_stops_in_radius(
-                            cur_stops, location.0, location.1, 150.0,
+                            cur_stops,
+                            current_location.0,
+                            current_location.1,
+                            150.0,
                         );
 
                         println!("[Print] stops_radius: {:?}", new_stops_radius.len());
@@ -176,18 +178,7 @@ impl App for MyApp {
 
                     if cur_departures_next_update <= Utc::now() {
                         println!("[Print] Updating departures");
-                        let stops_radius = stops_radius
-                            .read()
-                            .cloned()
-                            .iter()
-                            .filter_map(|e| {
-                                if e.siri_id.is_empty() {
-                                    None
-                                } else {
-                                    Some(e.siri_id.clone())
-                                }
-                            })
-                            .collect();
+                        let stops_radius = stops_radius.read().cloned().keys().cloned().collect();
                         let stops_departures = match get_departures(stops_radius).await {
                             Ok(stops_departures) => stops_departures,
                             Err(e) => {
@@ -215,7 +206,5 @@ impl App for MyApp {
 pub enum Route {
     #[layout(AppLayout)]
         #[route("/")]
-        Loading,
-        #[route("/timetable")]
         Timetable,
 }

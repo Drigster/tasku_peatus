@@ -7,9 +7,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::utils::{
-    departures_parser::Departure, preferences::get_cache_dir, text_utils::parse_csv_line,
-};
+use crate::utils::{preferences::get_cache_dir, text_utils::parse_csv_line};
 
 static STOPS_URL: &str = "https://transport.tallinn.ee/data/stops.txt";
 
@@ -42,41 +40,30 @@ pub fn get_stops_in_radius(
     center_lat: f64,
     center_lon: f64,
     radius_meters: f64,
-) -> (Vec<Stop>, HashMap<String, u64>) {
+) -> (HashMap<String, Stop>, HashMap<String, u64>) {
     let mut stops_distances: HashMap<String, u64> = HashMap::new();
+    let mut stops_radius: HashMap<String, Stop> = HashMap::new();
 
-    let mut stops_radius: Vec<Stop> = stops
-        .into_iter()
-        .filter_map(|mut stop| {
-            let lat_delta = meters_to_degrees_lat(radius_meters + 5.0);
-            let lon_delta = meters_to_degrees_lon(radius_meters + 5.0, center_lat);
+    for stop in stops.into_iter() {
+        let lat_delta = meters_to_degrees_lat(radius_meters + 5.0);
+        let lon_delta = meters_to_degrees_lon(radius_meters + 5.0, center_lat);
 
-            if (stop.lat - center_lat).abs() <= lat_delta
-                && (stop.lon - center_lon).abs() <= lon_delta
-            //&& stop.transports.is_empty() == false
-            {
-                let distance = Haversine.distance(
-                    Point::new(center_lon, center_lat),
-                    Point::new(stop.lon, stop.lat),
-                );
+        if (stop.lat - center_lat).abs() <= lat_delta && (stop.lon - center_lon).abs() <= lon_delta
+        //&& stop.transports.is_empty() == false
+        {
+            let distance = Haversine.distance(
+                Point::new(center_lon, center_lat),
+                Point::new(stop.lon, stop.lat),
+            );
 
-                if distance > radius_meters {
-                    return None;
-                }
-
-                stops_distances.insert(stop.siri_id.clone(), distance as u64);
-                return Some(stop);
+            if distance > radius_meters {
+                continue;
             }
 
-            None
-        })
-        .collect();
-
-    stops_radius.sort_by(|a, b| {
-        stops_distances
-            .get(&a.siri_id)
-            .cmp(&stops_distances.get(&b.siri_id))
-    });
+            stops_distances.insert(stop.siri_id.clone(), distance as u64);
+            stops_radius.insert(stop.siri_id.clone(), stop);
+        }
+    }
 
     (stops_radius, stops_distances)
 }
