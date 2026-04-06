@@ -1,11 +1,7 @@
 use chrono::{DateTime, Utc};
 use geo::{Distance, Haversine, Point};
 use serde::Deserialize;
-use std::{
-    collections::{HashMap, HashSet},
-    fs, io,
-    path::PathBuf,
-};
+use std::{collections::HashMap, fs, io, path::PathBuf};
 
 use crate::utils::{preferences::get_cache_dir, text_utils::parse_csv_line};
 
@@ -135,7 +131,6 @@ pub fn parse_stops(data: String) -> Vec<Stop> {
         };
         let name = parts[name_index].clone();
         let is_favorite = false;
-        let transports = HashMap::new();
 
         stops.push(Stop {
             stop_id,
@@ -145,7 +140,6 @@ pub fn parse_stops(data: String) -> Vec<Stop> {
             stops: vec![],
             name,
             is_favorite,
-            transports,
         });
     }
 
@@ -189,8 +183,6 @@ pub struct Stop {
     pub name: String,
     #[serde(skip)]
     pub is_favorite: bool,
-    #[serde(skip)]
-    pub transports: HashMap<String, HashSet<String>>,
 }
 
 fn meters_to_degrees_lat(meters: f64) -> f64 {

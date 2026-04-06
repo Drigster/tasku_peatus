@@ -11,7 +11,16 @@ impl Component for AppLayout {
         let offsets: (f32, f32, f32, f32) = {
             #[cfg(target_os = "android")]
             {
-                crate::utils::jni_utils::get_bar_sizes().unwrap()
+                match crate::utils::jni_utils::get_bar_sizes() {
+                    Ok(offsets) => {
+                        println!("[Print] Offsets {:?}", offsets);
+                        offsets
+                    }
+                    Err(e) => {
+                        println!("[Print] Error getting bar sizes: {:?}", e);
+                        (0.0, 0.0, 0.0, 0.0)
+                    }
+                }
             }
             #[cfg(not(target_os = "android"))]
             {
@@ -32,7 +41,7 @@ impl Component for AppLayout {
 
         NativeRouter::new().child(
             rect()
-                .margin((
+                .padding((
                     offsets.0 / *scale_factor.read(),
                     offsets.1 / *scale_factor.read(),
                     offsets.2 / *scale_factor.read(),

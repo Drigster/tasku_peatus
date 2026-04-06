@@ -16,6 +16,13 @@ static PERMISSION_REQUEST_ID: AtomicI64 = AtomicI64::new(1);
 static PERMISSION_REQUESTS: LazyLock<Mutex<HashMap<i64, std::sync::mpsc::Sender<bool>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+fn clear_pending_java_exception(env: &mut JNIEnv) {
+    if let Ok(true) = env.exception_check() {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+}
+
 pub fn get_cache_dir_android() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let ctx = ndk_context::android_context();
     let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
@@ -45,51 +52,59 @@ pub fn get_bar_sizes() -> Result<(f32, f32, f32, f32), Box<dyn std::error::Error
     let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
 
     let mut env = vm.attach_current_thread()?;
-    let window = env
-        .call_method(
-            unsafe { JObject::from_raw(ctx.context().cast()) },
-            "getWindow",
-            "()Landroid/view/Window;",
-            &[],
-        )?
-        .l()?;
+    let context = unsafe { JObject::from_raw(ctx.context().cast()) };
 
-    // Get decor view
-    let decor_view = env
-        .call_method(&window, "getDecorView", "()Landroid/view/View;", &[])?
-        .l()?;
+    let helper_class = match (|| -> Result<JClass, jni::errors::Error> {
+        let class_loader = env
+            .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+            .l()?;
+        let helper_class_name = env.new_string("dev.drigster.taskupeatus.AndroidUiHelper")?;
+        let helper_class_obj = env
+            .call_method(
+                &class_loader,
+                "loadClass",
+                "(Ljava/lang/String;)Ljava/lang/Class;",
+                &[JValue::Object(&helper_class_name)],
+            )?
+            .l()?;
+        Ok(JClass::from(helper_class_obj))
+    })() {
+        Ok(class) => class,
+        Err(err) => {
+            println!("[Print] Error finding AndroidUiHelper: {:?}", err);
+            clear_pending_java_exception(&mut env);
+            return Ok((0.0, 0.0, 0.0, 0.0));
+        }
+    };
 
-    // Get window insets (API 20+)
-    let window_insets = env
-        .call_method(
-            &decor_view,
-            "getRootWindowInsets",
-            "()Landroid/view/WindowInsets;",
-            &[],
-        )?
-        .l()?;
+    let insets_array = match env.call_static_method(
+        helper_class,
+        "getBarSizes",
+        "(Landroid/content/Context;)[F",
+        &[JValue::Object(&context)],
+    ) {
+        Ok(value) => value.l()?,
+        Err(err) => {
+            println!("[Print] Error calling getBarSizes: {:?}", err);
+            clear_pending_java_exception(&mut env);
+            return Ok((0.0, 0.0, 0.0, 0.0));
+        }
+    };
 
-    // Get window insets (API 20+)
-    let system_bars = env
-        .call_static_method("android/view/WindowInsets$Type", "systemBars", "()I", &[])?
-        .i()?;
+    if insets_array.is_null() {
+        return Ok((0.0, 0.0, 0.0, 0.0));
+    }
 
-    // Get status bar height
-    let insets = env
-        .call_method(
-            &window_insets,
-            "getInsets",
-            "(I)Landroid/graphics/Insets;",
-            &[JValue::Int(system_bars)],
-        )?
-        .l()?;
+    let insets_array = jni::objects::JFloatArray::from(insets_array);
+    let len = env.get_array_length(&insets_array)?;
+    if len < 4 {
+        return Ok((0.0, 0.0, 0.0, 0.0));
+    }
 
-    let top = env.get_field(&insets, "top", "I")?.i()?;
-    let right = env.get_field(&insets, "right", "I")?.i()?;
-    let bottom = env.get_field(&insets, "bottom", "I")?.i()?;
-    let left = env.get_field(&insets, "left", "I")?.i()?;
+    let mut values = [0.0_f32; 4];
+    env.get_float_array_region(&insets_array, 0, &mut values)?;
 
-    Ok((top as f32, right as f32, bottom as f32, left as f32))
+    Ok((values[0], values[1], values[2], values[3]))
 }
 
 pub async fn check_and_request_permissions() -> Result<bool, Box<dyn std::error::Error>> {
@@ -103,16 +118,16 @@ pub async fn check_and_request_permissions() -> Result<bool, Box<dyn std::error:
         requests.insert(request_id, tx);
     }
 
-    let setup_result = (|| -> Result<(), Box<dyn std::error::Error>> {
-        let ctx = ndk_context::android_context();
-        let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
-        let mut env = vm.attach_current_thread()?;
-        let context = unsafe { JObject::from_raw(ctx.context().cast()) };
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
+    let mut env = vm.attach_current_thread()?;
+    let context = unsafe { JObject::from_raw(ctx.context().cast()) };
 
+    let setup_result: Result<(), jni::errors::Error> = (|| {
         let class_loader = env
             .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
             .l()?;
-        let helper_class_name = env.new_string("com.freya.androidapp.RustLocationHelper")?;
+        let helper_class_name = env.new_string("dev.drigster.taskupeatus.RustPermissionHelper")?;
         let helper_class_obj = env
             .call_method(
                 &class_loader,
@@ -134,10 +149,11 @@ pub async fn check_and_request_permissions() -> Result<bool, Box<dyn std::error:
     })();
 
     if let Err(err) = setup_result {
+        clear_pending_java_exception(&mut env);
         if let Ok(mut requests) = PERMISSION_REQUESTS.lock() {
             requests.remove(&request_id);
         }
-        return Err(err);
+        return Err(Box::new(err));
     }
 
     let permission_result =
@@ -231,7 +247,7 @@ where
         let class_loader = env
             .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
             .l()?;
-        let helper_class_name = env.new_string("com.freya.androidapp.RustLocationHelper")?;
+        let helper_class_name = env.new_string("dev.drigster.taskupeatus.RustLocationHelper")?;
         let helper_class_obj = env
             .call_method(
                 &class_loader,
@@ -253,6 +269,7 @@ where
     })();
 
     if let Err(err) = setup_result {
+        clear_pending_java_exception(&mut env);
         unsafe {
             drop(Box::from_raw(callback_ptr as *mut LocationEnabledCallback));
         }
@@ -271,7 +288,7 @@ where
 //     let class_loader = env
 //         .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
 //         .l()?;
-//     let helper_class_name = env.new_string("com.freya.androidapp.RustLocationHelper")?;
+//     let helper_class_name = env.new_string("dev.drigster.taskupeatus.RustLocationHelper")?;
 //     let helper_class_obj = env
 //         .call_method(
 //             &class_loader,
@@ -312,7 +329,7 @@ where
         let class_loader = env
             .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
             .l()?;
-        let helper_class_name = env.new_string("com.freya.androidapp.RustLocationHelper")?;
+        let helper_class_name = env.new_string("dev.drigster.taskupeatus.RustLocationHelper")?;
         let helper_class_obj = env
             .call_method(
                 &class_loader,
@@ -334,6 +351,7 @@ where
     })();
 
     if let Err(err) = setup_result {
+        clear_pending_java_exception(&mut env);
         unsafe {
             drop(Box::from_raw(callback_ptr as *mut LocationUpdatesCallback));
         }
@@ -352,7 +370,7 @@ where
 //     let class_loader = env
 //         .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
 //         .l()?;
-//     let helper_class_name = env.new_string("com.freya.androidapp.RustLocationHelper")?;
+//     let helper_class_name = env.new_string("dev.drigster.taskupeatus.RustLocationHelper")?;
 //     let helper_class_obj = env
 //         .call_method(
 //             &class_loader,
@@ -378,7 +396,7 @@ where
 // }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_freya_androidapp_RustLocationHelper_onLocationResult(
+pub extern "system" fn Java_dev_drigster_taskupeatus_RustLocationHelper_onLocationResult(
     _env: JNIEnv,
     _class: jni::objects::JClass,
     callback_ptr: i64,
@@ -394,7 +412,7 @@ pub extern "system" fn Java_com_freya_androidapp_RustLocationHelper_onLocationRe
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_freya_androidapp_RustLocationHelper_onLocationError(
+pub extern "system" fn Java_dev_drigster_taskupeatus_RustLocationHelper_onLocationError(
     _env: JNIEnv,
     _class: jni::objects::JClass,
     callback_ptr: i64,
@@ -407,7 +425,7 @@ pub extern "system" fn Java_com_freya_androidapp_RustLocationHelper_onLocationEr
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_freya_androidapp_RustLocationHelper_onLocationChanged(
+pub extern "system" fn Java_dev_drigster_taskupeatus_RustLocationHelper_onLocationChanged(
     _env: JNIEnv,
     _class: jni::objects::JClass,
     callback_ptr: i64,
@@ -422,7 +440,7 @@ pub extern "system" fn Java_com_freya_androidapp_RustLocationHelper_onLocationCh
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_freya_androidapp_RustLocationHelper_onPermissionResult(
+pub extern "system" fn Java_dev_drigster_taskupeatus_RustPermissionHelper_onPermissionResult(
     _env: JNIEnv,
     _class: jni::objects::JClass,
     callback_ptr: i64,
@@ -436,7 +454,7 @@ pub extern "system" fn Java_com_freya_androidapp_RustLocationHelper_onPermission
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_freya_androidapp_RustLocationHelper_onLocationEnabledChanged(
+pub extern "system" fn Java_dev_drigster_taskupeatus_RustLocationHelper_onLocationEnabledChanged(
     _env: JNIEnv,
     _class: jni::objects::JClass,
     callback_ptr: i64,

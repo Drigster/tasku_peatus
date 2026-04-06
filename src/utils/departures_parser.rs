@@ -117,12 +117,13 @@ pub async fn get_departures(
                             && e.route == route
                             && e.direction == direction
                     }) {
+                        departure.expected_times.push(expected_time);
                         departure.scheduled_times.push(scheduled_time);
                     } else {
                         let departure = Departure {
                             departure_type,
                             route: route.clone(),
-                            expected_time,
+                            expected_times: vec![expected_time],
                             scheduled_times: vec![scheduled_time],
                             direction: direction.clone(),
                             until,
@@ -201,11 +202,37 @@ impl From<&String> for DepartureType {
     }
 }
 
+impl Into<&str> for DepartureType {
+    fn into(self) -> &'static str {
+        match self {
+            DepartureType::Metro => "metro",
+            DepartureType::Bus => "bus",
+            DepartureType::NightBus => "nightbus",
+            DepartureType::Trol => "trol",
+            DepartureType::Tram => "tram",
+            DepartureType::RegionalBus => "regionalbus",
+            DepartureType::SuburbanBus => "suburbanbus",
+            DepartureType::CommercialBus => "commercialbus",
+            DepartureType::IntercityBus => "intercitybus",
+            DepartureType::InternationalBus => "internationalbus",
+            DepartureType::SeasonalBus => "seasonalbus",
+            DepartureType::ExpressBus => "expressbus",
+            DepartureType::MiniBus => "minibus",
+            DepartureType::Train => "train",
+            DepartureType::Plane => "plane",
+            DepartureType::Festival => "festival",
+            DepartureType::EventBus => "eventbus",
+            DepartureType::Ferry => "ferry",
+            DepartureType::Aquabus => "aquabus",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Departure {
     pub departure_type: DepartureType,
     pub route: String,
-    pub expected_time: u64,
+    pub expected_times: Vec<u64>,
     pub scheduled_times: Vec<u64>,
     pub direction: String,
     pub until: u32,

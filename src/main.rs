@@ -14,7 +14,9 @@ mod utils;
 
 use app::MyApp;
 
-use crate::utils::{departures_parser::Departure, stops_parser::Stop};
+use crate::utils::{
+    departures_parser::Departure, routes_parser::DepartureTimes, stops_parser::Stop,
+};
 
 pub static APP_DIR_NAME: &str = "TaskuPeatus";
 
@@ -65,6 +67,8 @@ pub struct Data {
     stops_distances: HashMap<String, u64>,
     departures: HashMap<String, Vec<Departure>>,
     departures_next_update: DateTime<Utc>,
+    routes: HashMap<String, HashMap<String, DepartureTimes>>,
+
     location: Option<(f64, f64)>,
 
     is_location_enabled: bool,
@@ -84,6 +88,7 @@ pub enum DataChannel {
     LocationUpdate,
     LocationEnabledUpdate,
     ErrorStateUpdate,
+    RoutesUpdate,
 }
 
 impl RadioChannel<Data> for DataChannel {}

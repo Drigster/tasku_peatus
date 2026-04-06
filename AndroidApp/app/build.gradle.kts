@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "com.freya.androidapp"
+    namespace = "dev.drigster.taskupeatus"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -11,8 +11,8 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.freya.androidapp"
-        minSdk = 33
+        applicationId = "dev.drigster.taskupeatus"
+        minSdk = 31
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -53,7 +53,6 @@ tasks.named("preBuild") {
 }
 
 dependencies {
-    implementation(libs.androidx.games.activity)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)

@@ -1,18 +1,22 @@
-use std::{cmp, time::Duration};
+use std::{time::Duration, vec};
 
-use chrono::TimeDelta;
-use freya::{icons::lucide, prelude::*};
+use chrono::{Local, TimeDelta, Timelike};
+use freya::{icons::lucide, prelude::*, radio::use_radio};
 
-use crate::utils::departures_parser::Departure;
+use crate::{
+    DataChannel,
+    utils::{departures_parser::Departure, text_utils::get_transport_icon_and_color},
+};
 
 #[derive(Clone, PartialEq)]
 pub struct DepartureComponent {
     pub departure: Departure,
+    pub stop_id: String,
 }
 
 impl DepartureComponent {
-    pub fn new(departure: Departure) -> Self {
-        Self { departure }
+    pub fn new(stop_id: String, departure: Departure) -> Self {
+        Self { departure, stop_id }
     }
 }
 
@@ -21,6 +25,23 @@ impl Component for DepartureComponent {
         let theme = use_theme();
 
         let mut departure_time = use_state(|| self.departure.until);
+        let radio = use_radio(DataChannel::RoutesUpdate);
+        let route_times = match radio.read().routes.get(&self.stop_id) {
+            Some(route_times) => match route_times.get(&self.departure.route) {
+                Some(route_times) => route_times.times.clone(),
+                None => vec![],
+            },
+            None => vec![],
+        };
+        let now = Local::now().time();
+        let filtered_route_times = route_times
+            .into_iter()
+            .filter(|e| (e * 60) >= now.num_seconds_from_midnight())
+            .take(5)
+            .collect::<Vec<u32>>();
+
+        let (transport_icon, transport_color) =
+            get_transport_icon_and_color(self.departure.departure_type.clone().into());
 
         use_side_effect_with_deps(&self.departure.until, move |value| {
             departure_time.set(*value);
@@ -47,29 +68,24 @@ impl Component for DepartureComponent {
                 rect()
                     .width(Size::Fill)
                     .height(Size::px(70.0))
-                    .spacing(4.0)
                     .corner_radius(6.0)
                     .background(theme.read().colors.primary)
                     .direction(Direction::Horizontal)
                     .content(Content::Flex)
-                    .shadow(
-                        Shadow::new()
-                            .x(3.0)
-                            .y(3.0)
-                            .blur(6.0)
-                            .color(Color::BLACK.with_a(102)),
-                    )
+                    // .shadow(
+                    //     Shadow::new()
+                    //         .x(3.0)
+                    //         .y(3.0)
+                    //         .blur(6.0)
+                    //         .color(Color::BLACK.with_a(102)),
+                    // )
                     .child(
                         rect()
                             .height(Size::px(70.0))
                             .width(Size::px(70.0))
-                            .padding(6.0)
+                            .padding(8.0)
                             .center()
-                            .child(
-                                svg(lucide::bus_front())
-                                    .width(Size::Fill)
-                                    .height(Size::Fill),
-                            ),
+                            .child(svg(transport_icon).width(Size::Fill).height(Size::Fill)),
                     )
                     .child(
                         rect()
@@ -86,7 +102,7 @@ impl Component for DepartureComponent {
                                             .width(Size::px(35.0))
                                             .height(Size::px(20.0))
                                             .center()
-                                            .background(Color::from_hex("#00E1B4").unwrap())
+                                            .background(transport_color)
                                             .corner_radius(8.0)
                                             .child(
                                                 label()
@@ -119,8 +135,27 @@ impl Component for DepartureComponent {
                                                     time.num_minutes() % 60
                                                 )
                                             })
+                                            .take(5)
                                             .collect::<Vec<String>>()
-                                            [0..cmp::min(5, self.departure.scheduled_times.len())]
+                                            .join(", ")
+                                    }),
+                            )
+                            .child(
+                                label()
+                                    .color(theme.read().colors.text_primary)
+                                    .font_size(15.0)
+                                    .text({
+                                        filtered_route_times
+                                            .iter()
+                                            .map(|time| {
+                                                let time = TimeDelta::minutes(*time as i64);
+                                                format!(
+                                                    "{}:{:02}",
+                                                    time.num_hours(),
+                                                    time.num_minutes() % 60
+                                                )
+                                            })
+                                            .collect::<Vec<String>>()
                                             .join(", ")
                                     }),
                             ),

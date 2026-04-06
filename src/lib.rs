@@ -9,6 +9,8 @@ use freya::{
 use smol::stream::StreamExt;
 #[cfg(target_os = "android")]
 use std::collections::HashMap;
+#[cfg(target_os = "android")]
+use winit::platform::android::activity::AndroidApp;
 
 #[cfg(target_os = "android")]
 mod app;
@@ -24,17 +26,17 @@ mod utils;
 use app::MyApp;
 
 #[cfg(target_os = "android")]
-use crate::utils::{departures_parser::Departure, stops_parser::Stop};
+use crate::utils::{
+    departures_parser::Departure, routes_parser::DepartureTimes, stops_parser::Stop,
+};
 
 #[cfg(target_os = "android")]
 pub static APP_DIR_NAME: &str = "TaskuPeatus";
 
 #[cfg(target_os = "android")]
-use winit::platform::android::activity::AndroidApp;
-
-#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 fn android_main(droid_app: AndroidApp) {
+    use freya::android::AndroidPlugin;
     use freya_winit::renderer::NativeEvent;
     use winit::{event_loop::EventLoop, platform::android::EventLoopBuilderExtAndroid};
 
@@ -42,8 +44,10 @@ fn android_main(droid_app: AndroidApp) {
         android_logger::Config::default().with_max_level(log::LevelFilter::Debug),
     );
 
-    let mut event_loop_builder = EventLoop::<NativeEvent>::with_user_event();
-    event_loop_builder.with_android_app(droid_app);
+    let event_loop = EventLoop::<NativeEvent>::with_user_event()
+        .with_android_app(droid_app.clone())
+        .build()
+        .expect("Failed to build event loop");
 
     let mut radio_station = RadioStation::create_global(Data::default());
 
@@ -53,6 +57,7 @@ fn android_main(droid_app: AndroidApp) {
 
     launch(
         LaunchConfig::new()
+            .with_plugin(AndroidPlugin::new(droid_app))
             .with_future(move |_| async move {
                 while let Some(channel_data) = state_rx.next().await {
                     match channel_data {
@@ -69,10 +74,11 @@ fn android_main(droid_app: AndroidApp) {
                     }
                 }
             })
-            .with_window(WindowConfig::new_app(MyApp { radio_station }).with_size(500.0, 450.0))
-            .with_event_loop_builder(event_loop_builder),
+            .with_window(WindowConfig::new_app(MyApp { radio_station }))
+            .with_event_loop(event_loop),
     )
 }
+
 #[cfg(target_os = "android")]
 #[derive(Debug, Clone)]
 pub enum ErrorState {
@@ -81,6 +87,7 @@ pub enum ErrorState {
     NoLocation(String),
     StopsUpdateError(String),
 }
+
 #[cfg(target_os = "android")]
 #[derive(Default, Clone)]
 pub struct Data {
@@ -89,6 +96,8 @@ pub struct Data {
     stops_distances: HashMap<String, u64>,
     departures: HashMap<String, Vec<Departure>>,
     departures_next_update: DateTime<Utc>,
+    routes: HashMap<String, HashMap<String, DepartureTimes>>,
+
     location: Option<(f64, f64)>,
 
     is_location_enabled: bool,
@@ -96,6 +105,7 @@ pub struct Data {
 
     state_tx: Option<futures_channel::mpsc::UnboundedSender<ChannelSend>>,
 }
+
 #[cfg(target_os = "android")]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum DataChannel {
@@ -108,9 +118,12 @@ pub enum DataChannel {
     LocationUpdate,
     LocationEnabledUpdate,
     ErrorStateUpdate,
+    RoutesUpdate,
 }
+
 #[cfg(target_os = "android")]
 impl RadioChannel<Data> for DataChannel {}
+
 #[cfg(target_os = "android")]
 pub enum ChannelSend {
     LocationUpdate((f64, f64)),

@@ -72,13 +72,13 @@ impl Component for StopComponent {
                     .background(theme.read().colors.primary)
                     .direction(Direction::Horizontal)
                     .content(Content::Flex)
-                    .shadow(
-                        Shadow::new()
-                            .x(3.0)
-                            .y(3.0)
-                            .blur(6.0)
-                            .color(Color::BLACK.with_a(102)),
-                    )
+                    // .shadow(
+                    //     Shadow::new()
+                    //         .x(3.0)
+                    //         .y(3.0)
+                    //         .blur(6.0)
+                    //         .color(Color::BLACK.with_a(102)),
+                    // )
                     .child(
                         rect()
                             .direction(Direction::Horizontal)
@@ -139,7 +139,9 @@ impl Component for StopComponent {
                         departures
                             .iter()
                             .cloned()
-                            .map(|departure| DepartureComponent::new(departure).into())
+                            .map(|departure| {
+                                DepartureComponent::new(stop_data.stop_id.clone(), departure).into()
+                            })
                             .collect()
                     } else {
                         vec![
@@ -151,13 +153,13 @@ impl Component for StopComponent {
                                 .background(theme.read().colors.primary)
                                 .direction(Direction::Horizontal)
                                 .content(Content::Flex)
-                                .shadow(
-                                    Shadow::new()
-                                        .x(3.0)
-                                        .y(3.0)
-                                        .blur(6.0)
-                                        .color(Color::BLACK.with_a(102)),
-                                )
+                                // .shadow(
+                                //     Shadow::new()
+                                //         .x(3.0)
+                                //         .y(3.0)
+                                //         .blur(6.0)
+                                //         .color(Color::BLACK.with_a(102)),
+                                // )
                                 .child(
                                     rect()
                                         .width(Size::Fill)
