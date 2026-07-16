@@ -39,65 +39,63 @@ impl Component for AppLayout {
         });
         let error_state = radio.slice(DataChannel::ErrorStateUpdate, |s| &s.error_state);
 
-        NativeRouter::new().child(
-            rect()
-                .padding((
-                    offsets.0 / *scale_factor.read(),
-                    offsets.1 / *scale_factor.read(),
-                    offsets.2 / *scale_factor.read(),
-                    offsets.3 / *scale_factor.read(),
-                ))
-                .expanded()
-                .background(theme.read().colors.secondary)
-                .child(
-                    rect()
-                        .width(Size::Fill)
-                        .height(Size::px(50.0))
-                        .center()
-                        .shadow(
-                            Shadow::new()
-                                .y(4.0)
-                                .blur(4.0)
-                                .color(Color::BLACK.with_a(64)),
-                        )
-                        .child(
-                            label()
-                                .font_size(20.0)
-                                .font_weight(FontWeight::MEDIUM)
-                                .color(theme.read().colors.text_secondary)
-                                .text("Timetable"),
-                        ),
-                )
-                .child(Outlet::<Route>::new())
-                .child(
-                    rect()
-                        .position(Position::new_absolute().bottom(0.0))
-                        .layer(Layer::Overlay)
-                        .width(Size::Fill)
-                        .height(Size::px(120.0))
-                        .direction(Direction::Vertical)
-                        .main_align(Alignment::End)
-                        .maybe_child(if !*is_location_enabled.read() {
-                            Some(
-                                rect()
-                                    .width(Size::Fill)
-                                    .height(Size::px(60.0))
-                                    .background(Color::from_hex("#FF000080").unwrap())
-                                    .center()
-                                    .child(label().text("Location disabled")),
-                            )
-                        } else {
-                            None
-                        })
-                        .maybe_child(error_state.read().cloned().map(|error_state| {
+        rect()
+            .padding((
+                offsets.0 / *scale_factor.read(),
+                offsets.1 / *scale_factor.read(),
+                offsets.2 / *scale_factor.read(),
+                offsets.3 / *scale_factor.read(),
+            ))
+            .expanded()
+            .background(theme.read().colors.secondary)
+            .child(
+                rect()
+                    .width(Size::Fill)
+                    .height(Size::px(50.0))
+                    .center()
+                    .shadow(
+                        Shadow::new()
+                            .y(4.0)
+                            .blur(4.0)
+                            .color(Color::BLACK.with_a(64)),
+                    )
+                    .child(
+                        label()
+                            .font_size(20.0)
+                            .font_weight(FontWeight::MEDIUM)
+                            .color(theme.read().colors.text_secondary)
+                            .text("Timetable"),
+                    ),
+            )
+            .child(Outlet::<Route>::new())
+            .child(
+                rect()
+                    .position(Position::new_absolute().bottom(0.0))
+                    .layer(Layer::Overlay)
+                    .width(Size::Fill)
+                    .height(Size::px(120.0))
+                    .direction(Direction::Vertical)
+                    .main_align(Alignment::End)
+                    .maybe_child(if !*is_location_enabled.read() {
+                        Some(
                             rect()
                                 .width(Size::Fill)
                                 .height(Size::px(60.0))
                                 .background(Color::from_hex("#FF000080").unwrap())
                                 .center()
-                                .child(label().text(format!("{:?}", error_state)))
-                        })),
-                ),
-        )
+                                .child(label().text("Location disabled")),
+                        )
+                    } else {
+                        None
+                    })
+                    .maybe_child(error_state.read().cloned().map(|error_state| {
+                        rect()
+                            .width(Size::Fill)
+                            .height(Size::px(60.0))
+                            .background(Color::from_hex("#FF000080").unwrap())
+                            .center()
+                            .child(label().text(format!("{:?}", error_state)))
+                    })),
+            )
     }
 }

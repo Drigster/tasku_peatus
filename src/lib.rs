@@ -92,7 +92,7 @@ pub enum ErrorState {
 #[derive(Default, Clone)]
 pub struct Data {
     stops: Vec<Stop>,
-    stops_radius: HashMap<String, Stop>,
+    stops_radius: Vec<String>,
     stops_distances: HashMap<String, u64>,
     departures: HashMap<String, Vec<Departure>>,
     departures_next_update: DateTime<Utc>,

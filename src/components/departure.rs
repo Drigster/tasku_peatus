@@ -1,7 +1,7 @@
 use std::{time::Duration, vec};
 
 use chrono::{Local, TimeDelta, Timelike};
-use freya::{icons::lucide, prelude::*, radio::use_radio};
+use freya::{prelude::*, radio::use_radio};
 
 use crate::{
     DataChannel,
@@ -27,10 +27,15 @@ impl Component for DepartureComponent {
         let mut departure_time = use_state(|| self.departure.until);
         let radio = use_radio(DataChannel::RoutesUpdate);
         let route_times = match radio.read().routes.get(&self.stop_id) {
-            Some(route_times) => match route_times.get(&self.departure.route) {
-                Some(route_times) => route_times.times.clone(),
-                None => vec![],
-            },
+            Some(route_times) => {
+                match route_times.get(&(
+                    self.departure.route_type.clone(),
+                    self.departure.route.clone(),
+                )) {
+                    Some(route_times) => route_times.clone(),
+                    None => vec![],
+                }
+            }
             None => vec![],
         };
         let now = Local::now().time();
@@ -41,7 +46,7 @@ impl Component for DepartureComponent {
             .collect::<Vec<u32>>();
 
         let (transport_icon, transport_color) =
-            get_transport_icon_and_color(self.departure.departure_type.clone().into());
+            get_transport_icon_and_color(self.departure.route_type.clone().into());
 
         use_side_effect_with_deps(&self.departure.until, move |value| {
             departure_time.set(*value);
@@ -85,7 +90,11 @@ impl Component for DepartureComponent {
                             .width(Size::px(70.0))
                             .padding(8.0)
                             .center()
-                            .child(svg(transport_icon).width(Size::Fill).height(Size::Fill)),
+                            .child(
+                                SvgViewer::new(transport_icon)
+                                    .width(Size::Fill)
+                                    .height(Size::Fill),
+                            ),
                     )
                     .child(
                         rect()

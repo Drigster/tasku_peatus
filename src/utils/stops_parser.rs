@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use geo::{Distance, Haversine, Point};
+use revision::{from_slice, revisioned, to_vec};
 use serde::Deserialize;
 use std::{collections::HashMap, fs, io, path::PathBuf};
 
@@ -14,16 +15,20 @@ pub async fn get_stops() -> Result<Vec<Stop>, Box<dyn std::error::Error>> {
             let mut result = ureq::get(STOPS_URL).call()?;
             let body = result.body_mut().read_to_string()?;
 
-            fs::write(get_stops_file_path(), &body)?;
+            let stops = parse_stops(body);
 
-            Ok(parse_stops(body))
+            let bytes = to_vec(&stops).unwrap();
+            fs::write(get_stops_file_path(), &bytes)?;
+
+            Ok(stops)
         })
         .await
         .map_err(|e: ureq::Error| -> Box<dyn std::error::Error> { Box::new(e) })
     } else {
         let stops = blocking::unblock(|| {
-            let data = fs::read_to_string(get_stops_file_path())?;
-            Ok::<Vec<Stop>, io::Error>(parse_stops(data))
+            let bytes = fs::read(get_stops_file_path())?;
+            let data: Vec<Stop> = from_slice(&bytes).unwrap();
+            Ok::<Vec<Stop>, io::Error>(data)
         })
         .await?;
 
@@ -36,11 +41,14 @@ pub fn get_stops_in_radius(
     center_lat: f64,
     center_lon: f64,
     radius_meters: f64,
-) -> (HashMap<String, Stop>, HashMap<String, u64>) {
+) -> (Vec<String>, HashMap<String, u64>) {
     let mut stops_distances: HashMap<String, u64> = HashMap::new();
-    let mut stops_radius: HashMap<String, Stop> = HashMap::new();
+    let mut stops_radius: Vec<String> = Vec::new();
 
     for stop in stops.into_iter() {
+        if stop.siri_id.trim().is_empty() {
+            continue;
+        };
         let lat_delta = meters_to_degrees_lat(radius_meters + 5.0);
         let lon_delta = meters_to_degrees_lon(radius_meters + 5.0, center_lat);
 
@@ -57,9 +65,11 @@ pub fn get_stops_in_radius(
             }
 
             stops_distances.insert(stop.siri_id.clone(), distance as u64);
-            stops_radius.insert(stop.siri_id.clone(), stop);
+            stops_radius.push(stop.siri_id.clone());
         }
     }
+
+    stops_radius.sort_by(|a, b| stops_distances[a].cmp(&stops_distances[b]));
 
     (stops_radius, stops_distances)
 }
@@ -163,10 +173,14 @@ pub fn get_last_modified_version() -> DateTime<Utc> {
 }
 
 pub fn get_stops_file_path() -> PathBuf {
-    let cache_dir = get_cache_dir().unwrap();
-    cache_dir.join("stops.txt")
+    let cache_dir = get_cache_dir().unwrap().join("tasku_peatus");
+    if !cache_dir.exists() {
+        std::fs::create_dir_all(&cache_dir).unwrap();
+    }
+    cache_dir.join("stops.dat")
 }
 
+#[revisioned(revision = 1)]
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Stop {
     #[serde(rename = "ID")]

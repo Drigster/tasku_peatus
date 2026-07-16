@@ -111,7 +111,10 @@ impl App for MyApp {
                         Ok(true) => {
                             match get_last_known_location() {
                                 Ok(last_known_location) => {
-                                    println!("[Print] Location: {:?}", last_known_location);
+                                    println!(
+                                        "[Print] Last Known Location: {:?}",
+                                        last_known_location
+                                    );
                                     let _ = state_tx.unbounded_send(ChannelSend::LocationUpdate((
                                         last_known_location.0,
                                         last_known_location.1,
@@ -150,7 +153,8 @@ impl App for MyApp {
                         .write_channel(DataChannel::LocationEnabledUpdate)
                         .is_location_enabled = true;
                     radio.write_channel(DataChannel::LocationUpdate).location =
-                        Some((59.436552, 24.753048));
+                        // Some((59.436552, 24.753048));
+                        Some((59.443982, 24.722226));
                 }
             });
         });
@@ -160,16 +164,19 @@ impl App for MyApp {
                 let mut last_location = None;
                 let mut next_update = Utc::now();
                 loop {
-                    println!("[Print] loop");
                     if next_update > Utc::now() {
-                        println!("[Print] Loop: sleeping for {:?}", next_update - Utc::now());
                         smol::Timer::after((next_update - Utc::now()).to_std().unwrap()).await;
                         continue;
                     }
 
                     let location = location.read().cloned();
                     if location.is_none() {
-                        next_update += Duration::from_millis(100);
+                        next_update += Duration::from_millis(10);
+                        continue;
+                    }
+
+                    if stops.read().is_empty() {
+                        next_update += Duration::from_millis(10);
                         continue;
                     }
                     next_update += Duration::from_secs(5);
@@ -183,18 +190,16 @@ impl App for MyApp {
                         }
                         last_location = location;
 
-                        let (new_stops_radius, new_stops_distances): (
-                            HashMap<String, Stop>,
-                            HashMap<String, u64>,
-                        ) = stops_parser::get_stops_in_radius(
-                            cur_stops,
-                            current_location.0,
-                            current_location.1,
-                            150.0,
-                        );
+                        let (new_stops_radius, new_stops_distances) =
+                            stops_parser::get_stops_in_radius(
+                                cur_stops,
+                                current_location.0,
+                                current_location.1,
+                                150.0,
+                            );
 
                         {
-                            *stops_radius.write() = new_stops_radius;
+                            stops_radius.set_if_modified(new_stops_radius);
                             for (id, distance) in new_stops_distances {
                                 radio
                                     .write_channel(DataChannel::StopsDistancesUpdate(id.clone()))
@@ -207,20 +212,14 @@ impl App for MyApp {
                     let cur_departures_next_update = departures_next_update.read().cloned();
 
                     if cur_departures_next_update <= Utc::now() {
-                        let stops_radius = stops_radius
-                            .read()
-                            .cloned()
-                            .keys()
-                            .cloned()
-                            .filter(|e| !e.trim().is_empty())
-                            .collect();
-                        let stops_departures = match get_departures(stops_radius).await {
-                            Ok(stops_departures) => stops_departures,
-                            Err(e) => {
-                                log::error!("Error getting departures: {e}");
-                                (HashMap::new(), 30)
-                            }
-                        };
+                        let stops_departures =
+                            match get_departures(stops_radius.read().cloned()).await {
+                                Ok(stops_departures) => stops_departures,
+                                Err(e) => {
+                                    log::error!("Error getting departures: {e}");
+                                    (HashMap::new(), 30)
+                                }
+                            };
 
                         *departures_next_update.write() =
                             Utc::now() + Duration::from_secs(stops_departures.1.into());
@@ -230,7 +229,7 @@ impl App for MyApp {
             });
         });
 
-        Router::new(|| RouterConfig::<Route>::default().with_initial_path(Route::Timetable))
+        Router::<Route>::new(|| RouterConfig::default().with_initial_path(Route::Timetable))
     }
 }
 

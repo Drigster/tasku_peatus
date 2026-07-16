@@ -91,8 +91,8 @@ impl Component for StopComponent {
                                     .height(Size::px(35.0))
                                     .center()
                                     .child(
-                                        svg(lucide::chevron_right())
-                                            .rotate(rotation)
+                                        SvgViewer::new(lucide::chevron_right())
+                                            .rotation(rotation)
                                             .width(Size::Fill)
                                             .height(Size::Fill),
                                     ),
@@ -124,7 +124,11 @@ impl Component for StopComponent {
                             .height(Size::px(35.0))
                             .padding(4.0)
                             .center()
-                            .child(svg(lucide::star()).width(Size::Fill).height(Size::Fill)),
+                            .child(
+                                SvgViewer::new(lucide::star())
+                                    .width(Size::Fill)
+                                    .height(Size::Fill),
+                            ),
                     ),
             )
             .child(

@@ -1,14 +1,19 @@
 use chrono::{DateTime, Utc};
+use revision::{from_slice, revisioned, to_vec};
 use std::{collections::HashMap, fs, io, path::PathBuf};
 
-use crate::utils::{preferences::get_cache_dir, text_utils::parse_csv_line};
+use crate::utils::{
+    departures_parser::RouteType, preferences::get_cache_dir, text_utils::parse_csv_line,
+};
 
 static ROUTES_URL: &str = "https://transport.tallinn.ee/data/routes.txt";
 
-pub async fn get_routes()
--> Result<HashMap<String, HashMap<String, DepartureTimes>>, Box<dyn std::error::Error>> {
+pub type Routes = HashMap<String, HashMap<(RouteType, String), Vec<u32>>>;
+
+pub async fn get_routes() -> Result<Routes, Box<dyn std::error::Error>> {
     let last_modified = DateTime::<Utc>::MAX_UTC;
     if last_modified < get_last_modified_version() || !get_routes_file_path().exists() {
+        println!("Routes not found or outdated, downloading");
         let routes = blocking::unblock(|| {
             let mut result = ureq::get(ROUTES_URL).call()?;
             let body = result.body_mut().read_to_string()?;
@@ -19,15 +24,22 @@ pub async fn get_routes()
         })
         .await
         .map_err(|e: ureq::Error| -> Box<dyn std::error::Error> { Box::new(e) })?;
-        Ok(convert_route(routes))
+
+        let routes = convert_route(routes);
+
+        let bytes = to_vec(&routes).unwrap();
+        fs::write(get_routes_file_path(), &bytes)?;
+
+        Ok(routes)
     } else {
         let routes = blocking::unblock(|| {
-            let data = fs::read_to_string(get_routes_file_path())?;
-            Ok::<Vec<Route>, io::Error>(parse_routes(data))
+            let bytes = fs::read(get_routes_file_path())?;
+            let data: Routes = from_slice(&bytes).unwrap();
+            Ok::<Routes, io::Error>(data)
         })
         .await?;
 
-        Ok(convert_route(routes))
+        Ok(routes)
     }
 }
 
@@ -120,7 +132,7 @@ fn parse_routes(data: String) -> Vec<Route> {
             })
             .collect();
         let route_tag = parts[route_tag_index].clone();
-        let route_type = parts[route_type_index].clone();
+        let route_type = RouteType::from(&parts[route_type_index]);
         let commercial = parts[commercial_index].clone();
         let route_name = parts[route_name_index].clone();
         let weekdays = parts[weekdays_index].clone();
@@ -174,13 +186,16 @@ pub fn get_last_modified_version() -> DateTime<Utc> {
 }
 
 pub fn get_routes_file_path() -> PathBuf {
-    let cache_dir = get_cache_dir().unwrap();
-    cache_dir.join("routes.txt")
+    let cache_dir = get_cache_dir().unwrap().join("tasku_peatus");
+    if !cache_dir.exists() {
+        std::fs::create_dir_all(&cache_dir).unwrap();
+    }
+    cache_dir.join("routes.dat")
 }
 
-fn convert_route(routes: Vec<Route>) -> HashMap<String, HashMap<String, DepartureTimes>> {
-    //                                StopId          RouteNum        WeekDays
-    let mut converted_routes: HashMap<String, HashMap<String, DepartureTimes>> = HashMap::new();
+fn convert_route(routes: Vec<Route>) -> Routes {
+    //                                StopId           RouteType  RouteNum     WeekDays
+    let mut converted_routes: Routes = HashMap::new();
 
     for route in routes {
         for (i, route_stop) in route.route_stops.into_iter().enumerate() {
@@ -193,18 +208,19 @@ fn convert_route(routes: Vec<Route>) -> HashMap<String, HashMap<String, Departur
                 None => Vec::new(),
             };
 
-            let new_route = DepartureTimes {
-                route_num: route.route_num.clone(),
-                transport: route.transport.clone(),
-                times: stop_times,
-            };
             let stop_routes = converted_routes.get_mut(&route_stop);
             if let Some(stop_routes) = stop_routes {
-                stop_routes.insert(route.route_num.clone(), new_route);
+                stop_routes.insert(
+                    (route.route_type.clone(), route.route_num.clone()),
+                    stop_times,
+                );
             } else {
                 converted_routes.insert(
                     route_stop,
-                    HashMap::from([(route.route_num.clone(), new_route)]),
+                    HashMap::from([(
+                        (route.route_type.clone(), route.route_num.clone()),
+                        stop_times,
+                    )]),
                 );
             }
         }
@@ -223,7 +239,7 @@ struct Route {
     validity_periods: Vec<u64>,
     special_dates: Vec<u64>,
     route_tag: String,
-    route_type: String,
+    route_type: RouteType,
     commercial: String,
     route_name: String,
     weekdays: String,
@@ -231,13 +247,6 @@ struct Route {
     route_stops: Vec<String>,
     route_stops_platforms: String,
     times: Option<ExplodedTimes>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct DepartureTimes {
-    pub route_num: String,
-    pub transport: String,
-    pub times: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]

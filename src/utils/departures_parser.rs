@@ -3,6 +3,7 @@ use std::{collections::HashMap, vec};
 use crate::utils::text_utils::parse_csv_line;
 use blocking::unblock;
 use chrono::Utc;
+use revision::revisioned;
 
 pub async fn get_departures(
     stops: Vec<String>,
@@ -87,7 +88,7 @@ pub async fn get_departures(
                         continue;
                     }
 
-                    let departure_type = DepartureType::from(row_type);
+                    let departure_type = RouteType::from(row_type);
                     let route = parts.get(route_index).unwrap().to_string();
                     let expected_time = parts
                         .get(expected_time_index)
@@ -113,7 +114,7 @@ pub async fn get_departures(
                     let current_departures =
                         departures.entry(current_stop.clone().unwrap()).or_default();
                     if let Some(departure) = current_departures.iter_mut().find(|e| {
-                        e.departure_type == departure_type
+                        e.route_type == departure_type
                             && e.route == route
                             && e.direction == direction
                     }) {
@@ -121,7 +122,7 @@ pub async fn get_departures(
                         departure.scheduled_times.push(scheduled_time);
                     } else {
                         let departure = Departure {
-                            departure_type,
+                            route_type: departure_type,
                             route: route.clone(),
                             expected_times: vec![expected_time],
                             scheduled_times: vec![scheduled_time],
@@ -143,6 +144,12 @@ pub async fn get_departures(
                 next_update = 15;
             }
 
+            for stop in stops {
+                if !departures.contains_key(&stop) {
+                    departures.insert(stop, Vec::new());
+                }
+            }
+
             Ok((departures, next_update))
         },
     )
@@ -152,8 +159,9 @@ pub async fn get_departures(
     Ok(departures)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DepartureType {
+#[revisioned(revision = 1)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum RouteType {
     Metro,
     Bus,
     NightBus,
@@ -175,62 +183,62 @@ pub enum DepartureType {
     Aquabus,
 }
 
-impl From<&String> for DepartureType {
+impl From<&String> for RouteType {
     fn from(s: &String) -> Self {
         match s.as_str() {
-            "metro" => DepartureType::Metro,
-            "bus" => DepartureType::Bus,
-            "nightbus" => DepartureType::NightBus,
-            "trol" => DepartureType::Trol,
-            "tram" => DepartureType::Tram,
-            "regionalbus" => DepartureType::RegionalBus,
-            "suburbanbus" => DepartureType::SuburbanBus,
-            "commercialbus" => DepartureType::CommercialBus,
-            "intercitybus" => DepartureType::IntercityBus,
-            "internationalbus" => DepartureType::InternationalBus,
-            "seasonalbus" => DepartureType::SeasonalBus,
-            "expressbus" => DepartureType::ExpressBus,
-            "minibus" => DepartureType::MiniBus,
-            "train" => DepartureType::Train,
-            "plane" => DepartureType::Plane,
-            "festival" => DepartureType::Festival,
-            "eventbus" => DepartureType::EventBus,
-            "ferry" => DepartureType::Ferry,
-            "aquabus" => DepartureType::Aquabus,
-            _ => DepartureType::Bus,
+            "metro" => RouteType::Metro,
+            "bus" => RouteType::Bus,
+            "nightbus" => RouteType::NightBus,
+            "trol" => RouteType::Trol,
+            "tram" => RouteType::Tram,
+            "regionalbus" => RouteType::RegionalBus,
+            "suburbanbus" => RouteType::SuburbanBus,
+            "commercialbus" => RouteType::CommercialBus,
+            "intercitybus" => RouteType::IntercityBus,
+            "internationalbus" => RouteType::InternationalBus,
+            "seasonalbus" => RouteType::SeasonalBus,
+            "expressbus" => RouteType::ExpressBus,
+            "minibus" => RouteType::MiniBus,
+            "train" => RouteType::Train,
+            "plane" => RouteType::Plane,
+            "festival" => RouteType::Festival,
+            "eventbus" => RouteType::EventBus,
+            "ferry" => RouteType::Ferry,
+            "aquabus" => RouteType::Aquabus,
+            _ => RouteType::Bus,
         }
     }
 }
 
-impl Into<&str> for DepartureType {
+impl Into<&str> for RouteType {
     fn into(self) -> &'static str {
         match self {
-            DepartureType::Metro => "metro",
-            DepartureType::Bus => "bus",
-            DepartureType::NightBus => "nightbus",
-            DepartureType::Trol => "trol",
-            DepartureType::Tram => "tram",
-            DepartureType::RegionalBus => "regionalbus",
-            DepartureType::SuburbanBus => "suburbanbus",
-            DepartureType::CommercialBus => "commercialbus",
-            DepartureType::IntercityBus => "intercitybus",
-            DepartureType::InternationalBus => "internationalbus",
-            DepartureType::SeasonalBus => "seasonalbus",
-            DepartureType::ExpressBus => "expressbus",
-            DepartureType::MiniBus => "minibus",
-            DepartureType::Train => "train",
-            DepartureType::Plane => "plane",
-            DepartureType::Festival => "festival",
-            DepartureType::EventBus => "eventbus",
-            DepartureType::Ferry => "ferry",
-            DepartureType::Aquabus => "aquabus",
+            RouteType::Metro => "metro",
+            RouteType::Bus => "bus",
+            RouteType::NightBus => "nightbus",
+            RouteType::Trol => "trol",
+            RouteType::Tram => "tram",
+            RouteType::RegionalBus => "regionalbus",
+            RouteType::SuburbanBus => "suburbanbus",
+            RouteType::CommercialBus => "commercialbus",
+            RouteType::IntercityBus => "intercitybus",
+            RouteType::InternationalBus => "internationalbus",
+            RouteType::SeasonalBus => "seasonalbus",
+            RouteType::ExpressBus => "expressbus",
+            RouteType::MiniBus => "minibus",
+            RouteType::Train => "train",
+            RouteType::Plane => "plane",
+            RouteType::Festival => "festival",
+            RouteType::EventBus => "eventbus",
+            RouteType::Ferry => "ferry",
+            RouteType::Aquabus => "aquabus",
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Departure {
-    pub departure_type: DepartureType,
+    pub route_type: RouteType,
     pub route: String,
     pub expected_times: Vec<u64>,
     pub scheduled_times: Vec<u64>,
