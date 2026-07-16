@@ -83,13 +83,44 @@ object RustLocationHelper {
         LOCATION_LISTENERS[callbackPtr] = listener
 
         try {
-            locationManager.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER,
-                1000L,
-                1f,
-                listener,
-                Looper.getMainLooper()
-            )
+            // Emit a recent value immediately so Rust doesn't rely only on a stale startup value.
+            locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let { location ->
+                onLocationChanged(
+                    callbackPtr,
+                    location.latitude,
+                    location.longitude,
+                    location.accuracy
+                )
+            }
+
+            locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)?.let { location ->
+                onLocationChanged(
+                    callbackPtr,
+                    location.latitude,
+                    location.longitude,
+                    location.accuracy
+                )
+            }
+
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    1000L,
+                    0f,
+                    listener,
+                    Looper.getMainLooper()
+                )
+            }
+
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER,
+                    2000L,
+                    0f,
+                    listener,
+                    Looper.getMainLooper()
+                )
+            }
         } catch (e: SecurityException) {
             LOCATION_LISTENERS.remove(callbackPtr)
             throw e
