@@ -7,8 +7,7 @@ use crate::utils::{
 };
 
 static ROUTES_URL: &str = "https://transport.tallinn.ee/data/routes.txt";
-
-pub type Routes = HashMap<String, HashMap<(RouteType, String), Vec<u32>>>;
+pub type Routes = HashMap<String, HashMap<(RouteType, String), HashMap<u8, Vec<i32>>>>;
 
 pub async fn get_routes() -> Result<Routes, Box<dyn std::error::Error>> {
     let last_modified = DateTime::<Utc>::MAX_UTC;
@@ -113,7 +112,7 @@ fn parse_routes(data: String) -> Vec<Route> {
         let route_num = parts[route_num_index].clone();
         let authority = parts[authority_index].clone();
         let city = parts[city_index].clone();
-        let transport = parts[transport_index].clone();
+        let transport = RouteType::from(&parts[transport_index]);
         let operator = parts[operator_index].clone();
         let validity_periods = parts[validity_periods_index]
             .clone()
@@ -132,7 +131,7 @@ fn parse_routes(data: String) -> Vec<Route> {
             })
             .collect();
         let route_tag = parts[route_tag_index].clone();
-        let route_type = RouteType::from(&parts[route_type_index]);
+        let route_type = parts[route_type_index].clone();
         let commercial = parts[commercial_index].clone();
         let route_name = parts[route_name_index].clone();
         let weekdays = parts[weekdays_index].clone();
@@ -194,31 +193,53 @@ pub fn get_routes_file_path() -> PathBuf {
 }
 
 fn convert_route(routes: Vec<Route>) -> Routes {
-    //                                StopId           RouteType  RouteNum     WeekDays
     let mut converted_routes: Routes = HashMap::new();
 
     for route in routes {
-        for (i, route_stop) in route.route_stops.into_iter().enumerate() {
+        for (i, route_stop) in route.route_stops.iter().enumerate() {
             let stop_times = match route.times {
-                Some(ref times) => times
-                    .times
-                    .get(i)
-                    .expect("Expected stops and times to be same length")
-                    .clone(),
-                None => Vec::new(),
+                Some(ref times) => {
+                    let mut weekdays_times: HashMap<u8, Vec<i32>> = HashMap::new();
+                    for (j, weekdays) in times.weekdays.iter().enumerate() {
+                        for weekday in weekdays.split("").into_iter() {
+                            if weekday.is_empty() {
+                                continue;
+                            }
+                            let weekday = weekday.parse::<u8>().unwrap();
+                            let today = weekdays_times.get_mut(&weekday);
+                            if let Some(today) = today {
+                                today.push(times.times[i][j]);
+                            } else {
+                                weekdays_times.insert(weekday, vec![times.times[i][j]]);
+                            }
+                        }
+                    }
+                    weekdays_times
+                }
+                None => HashMap::new(),
             };
 
-            let stop_routes = converted_routes.get_mut(&route_stop);
-            if let Some(stop_routes) = stop_routes {
-                stop_routes.insert(
-                    (route.route_type.clone(), route.route_num.clone()),
-                    stop_times,
-                );
+            if let Some(stop_routes) = converted_routes.get_mut(route_stop) {
+                if let Some(stop_route) =
+                    stop_routes.get_mut(&(route.transport.clone(), route.route_num.clone()))
+                {
+                    for (key, values) in stop_times {
+                        stop_route
+                            .entry(key)
+                            .and_modify(|v| v.append(&mut values.clone()))
+                            .or_insert(values);
+                    }
+                } else {
+                    stop_routes.insert(
+                        (route.transport.clone(), route.route_num.clone()),
+                        stop_times,
+                    );
+                }
             } else {
                 converted_routes.insert(
-                    route_stop,
+                    route_stop.clone(),
                     HashMap::from([(
-                        (route.route_type.clone(), route.route_num.clone()),
+                        (route.transport.clone(), route.route_num.clone()),
                         stop_times,
                     )]),
                 );
@@ -229,17 +250,18 @@ fn convert_route(routes: Vec<Route>) -> Routes {
     converted_routes
 }
 
+#[derive(Debug)]
 #[allow(dead_code)]
 struct Route {
     route_num: String,
     authority: String,
     city: String,
-    transport: String,
+    transport: RouteType,
     operator: String,
     validity_periods: Vec<u64>,
     special_dates: Vec<u64>,
     route_tag: String,
-    route_type: RouteType,
+    route_type: String,
     commercial: String,
     route_name: String,
     weekdays: String,
@@ -255,7 +277,7 @@ struct ExplodedTimes {
     valid_from: Vec<i32>,
     valid_to: Vec<i32>,
     low_ground: Vec<bool>,
-    times: Vec<Vec<u32>>,
+    times: Vec<Vec<i32>>,
 }
 
 fn parse_i32_lossy(token: &str, malformed_tokens: &mut Vec<String>) -> i32 {
@@ -447,25 +469,14 @@ fn explode_times(encoded_times: &str) -> ExplodedTimes {
     }
 
     // Convert flat minutes into stop rows of raw minute values.
-    // Negative values cannot be represented as u32, so skip and report once.
-    let mut skipped_negative_count = 0usize;
     let mut timetable = Vec::with_capacity(flat_minutes.len().div_ceil(width));
 
     for row in flat_minutes.chunks(width) {
         let mut stop_times = Vec::with_capacity(row.len());
         for minute in row {
-            if *minute < 0 {
-                skipped_negative_count += 1;
-                continue;
-            }
-
-            stop_times.push(*minute as u32);
+            stop_times.push(*minute);
         }
         timetable.push(stop_times);
-    }
-
-    if skipped_negative_count > 0 {
-        eprintln!("explode_times: skipped {skipped_negative_count} negative time value(s)");
     }
 
     if !malformed_tokens.is_empty() {

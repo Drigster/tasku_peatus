@@ -1,6 +1,6 @@
-use std::{time::Duration, vec};
+use std::{collections::HashMap, time::Duration, vec};
 
-use chrono::{Local, TimeDelta, Timelike};
+use chrono::{Datelike, Local, TimeDelta, Timelike};
 use freya::{prelude::*, radio::use_radio};
 
 use crate::{
@@ -33,17 +33,26 @@ impl Component for DepartureComponent {
                     self.departure.route.clone(),
                 )) {
                     Some(route_times) => route_times.clone(),
-                    None => vec![],
+                    None => HashMap::new(),
                 }
             }
-            None => vec![],
+            None => HashMap::new(),
         };
-        let now = Local::now().time();
-        let filtered_route_times = route_times
+        // println!(
+        //     "{:?} {:?} {:?}",
+        //     self.departure.direction, self.departure.route, route_times
+        // );
+
+        let now = Local::now();
+        let today_route_times = route_times
+            .get(&(now.weekday().num_days_from_monday() as u8 + 1))
+            .unwrap_or(&vec![])
+            .clone();
+        let filtered_route_times = today_route_times
             .into_iter()
-            .filter(|e| (e * 60) >= now.num_seconds_from_midnight())
+            .filter(|e| (e * 60) >= now.num_seconds_from_midnight() as i32)
             .take(5)
-            .collect::<Vec<u32>>();
+            .collect::<Vec<i32>>();
 
         let (transport_icon, transport_color) =
             get_transport_icon_and_color(self.departure.route_type.clone().into());

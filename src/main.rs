@@ -46,7 +46,11 @@ fn main() {
                     }
                 }
             })
-            .with_window(WindowConfig::new_app(MyApp { radio_station }).with_size(420.0, 900.0)),
+            .with_window(
+                WindowConfig::new_app(MyApp { radio_station })
+                    .with_size(420.0, 900.0)
+                    .with_decorations(false),
+            ),
     )
 }
 

@@ -46,7 +46,7 @@ impl App for MyApp {
         let stops = radio.slice_mut(DataChannel::StopsUpdate, |s| &mut s.stops);
         let mut stops_radius =
             radio.slice_mut(DataChannel::StopsRadiusUpdate, |s| &mut s.stops_radius);
-        let mut routes = radio.slice_mut(DataChannel::RoutesUpdate, |s| &mut s.routes);
+        let routes = radio.slice_mut(DataChannel::RoutesUpdate, |s| &mut s.routes);
         let mut departures_next_update = radio.slice_mut(DataChannel::DeparturesUpdate, |s| {
             &mut s.departures_next_update
         });
@@ -65,6 +65,7 @@ impl App for MyApp {
         });
 
         use_hook(|| {
+            let mut routes = routes.clone();
             spawn(async move {
                 if !routes.read().is_empty() {
                     return;
@@ -175,7 +176,7 @@ impl App for MyApp {
                         continue;
                     }
 
-                    if stops.read().is_empty() {
+                    if stops.read().is_empty() || routes.read().is_empty() {
                         next_update += Duration::from_millis(10);
                         continue;
                     }
