@@ -34,6 +34,19 @@ impl Component for StopComponent {
         let departures = radio.slice(DataChannel::DeparturesUpdate, |s| &s.departures);
         let binding = departures.read();
         let departures = binding.get(&siri_id);
+        let routes = radio.slice(DataChannel::RoutesUpdate, |s| &s.routes);
+        let binding = routes.read();
+        let route = binding.get(&stop_data.stop_id);
+        match route {
+            Some(route_times) => {
+                if route_times.is_empty() {
+                    return rect();
+                }
+            }
+            None => {
+                return rect();
+            }
+        };
 
         let mut open = use_state(|| true);
 
@@ -67,67 +80,76 @@ impl Component for StopComponent {
                     .width(Size::Fill)
                     .height(Size::px(35.0))
                     .margin((0.0, 4.0, 4.0, 4.0))
-                    .spacing(2.0)
                     .corner_radius(6.0)
-                    .background(theme.read().colors.primary)
-                    .direction(Direction::Horizontal)
-                    .content(Content::Flex)
-                    // .shadow(
-                    //     Shadow::new()
-                    //         .x(3.0)
-                    //         .y(3.0)
-                    //         .blur(6.0)
-                    //         .color(Color::BLACK.with_a(102)),
-                    // )
+                    .shadow(
+                        Shadow::new()
+                            .x(3.0)
+                            .y(3.0)
+                            .blur(6.0)
+                            .color(Color::BLACK.with_a(102)),
+                    )
                     .child(
                         rect()
+                            .width(Size::Fill)
+                            .height(Size::Fill)
+                            .spacing(2.0)
+                            .corner_radius(6.0)
+                            .background(theme.read().colors.primary)
                             .direction(Direction::Horizontal)
-                            .on_press(move |_| {
-                                open.set(!open());
-                            })
+                            .content(Content::Flex)
+                            .child(
+                                rect()
+                                    .direction(Direction::Horizontal)
+                                    .on_press(move |_| {
+                                        open.set(!open());
+                                    })
+                                    .child(
+                                        rect()
+                                            .width(Size::px(35.0))
+                                            .height(Size::px(35.0))
+                                            .padding(2.0)
+                                            .center()
+                                            .child(
+                                                SvgViewer::new(lucide::chevron_right())
+                                                    .rotation(rotation)
+                                                    .width(Size::Fill)
+                                                    .height(Size::Fill),
+                                            ),
+                                    )
+                                    .child(
+                                        rect()
+                                            .height(Size::Fill)
+                                            .main_align(Alignment::Center)
+                                            .overflow(Overflow::Clip)
+                                            .child(
+                                                label()
+                                                    .color(theme.read().colors.text_primary)
+                                                    .font_size(20.0)
+                                                    .max_lines(1)
+                                                    .text(format!(
+                                                        "{} - {}m",
+                                                        stop_data.name,
+                                                        stops_distances
+                                                            .read()
+                                                            .get(&self.siri_id)
+                                                            .copied()
+                                                            .unwrap_or(0)
+                                                    )),
+                                            ),
+                                    ),
+                            )
+                            .child(rect().width(Size::flex(1.0)))
                             .child(
                                 rect()
                                     .width(Size::px(35.0))
                                     .height(Size::px(35.0))
+                                    .padding(4.0)
                                     .center()
                                     .child(
-                                        SvgViewer::new(lucide::chevron_right())
-                                            .rotation(rotation)
+                                        SvgViewer::new(lucide::star())
                                             .width(Size::Fill)
                                             .height(Size::Fill),
                                     ),
-                            )
-                            .child(
-                                rect()
-                                    .height(Size::Fill)
-                                    .main_align(Alignment::Center)
-                                    .child(
-                                        label()
-                                            .color(theme.read().colors.text_primary)
-                                            .font_size(20.0)
-                                            .text(format!(
-                                                "{} - {}m",
-                                                stop_data.name,
-                                                stops_distances
-                                                    .read()
-                                                    .get(&self.siri_id)
-                                                    .copied()
-                                                    .unwrap_or(0)
-                                            )),
-                                    ),
-                            ),
-                    )
-                    .child(rect().width(Size::flex(1.0)))
-                    .child(
-                        rect()
-                            .width(Size::px(35.0))
-                            .height(Size::px(35.0))
-                            .padding(4.0)
-                            .center()
-                            .child(
-                                SvgViewer::new(lucide::star())
-                                    .width(Size::Fill)
-                                    .height(Size::Fill),
                             ),
                     ),
             )

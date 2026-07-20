@@ -25,34 +25,34 @@ impl Component for DepartureComponent {
         let theme = use_theme();
 
         let mut departure_time = use_state(|| self.departure.until);
-        let radio = use_radio(DataChannel::RoutesUpdate);
-        let route_times = match radio.read().routes.get(&self.stop_id) {
-            Some(route_times) => {
-                match route_times.get(&(
-                    self.departure.route_type.clone(),
-                    self.departure.route.clone(),
-                )) {
-                    Some(route_times) => route_times.clone(),
-                    None => HashMap::new(),
-                }
-            }
-            None => HashMap::new(),
-        };
+        // let radio = use_radio(DataChannel::RoutesUpdate);
+        // let route_times = match radio.read().routes.get(&self.stop_id) {
+        //     Some(route_times) => {
+        //         match route_times.get(&(
+        //             self.departure.route_type.clone(),
+        //             self.departure.route.clone(),
+        //         )) {
+        //             Some(route_times) => route_times.clone(),
+        //             None => HashMap::new(),
+        //         }
+        //     }
+        //     None => HashMap::new(),
+        // };
         // println!(
         //     "{:?} {:?} {:?}",
         //     self.departure.direction, self.departure.route, route_times
         // );
 
-        let now = Local::now();
-        let today_route_times = route_times
-            .get(&(now.weekday().num_days_from_monday() as u8 + 1))
-            .unwrap_or(&vec![])
-            .clone();
-        let filtered_route_times = today_route_times
-            .into_iter()
-            .filter(|e| (e * 60) >= now.num_seconds_from_midnight() as i32)
-            .take(5)
-            .collect::<Vec<i32>>();
+        // let now = Local::now();
+        // let today_route_times = route_times
+        //     .get(&(now.weekday().num_days_from_monday() as u8 + 1))
+        //     .unwrap_or(&vec![])
+        //     .clone();
+        // let filtered_route_times = today_route_times
+        //     .into_iter()
+        //     .filter(|e| (e * 60) >= now.num_seconds_from_midnight() as i32)
+        //     .take(5)
+        //     .collect::<Vec<i32>>();
 
         let (transport_icon, transport_color) =
             get_transport_icon_and_color(self.departure.route_type.clone().into());
@@ -78,6 +78,14 @@ impl Component for DepartureComponent {
 
         rect()
             .width(Size::Fill)
+            .corner_radius(6.0)
+            .shadow(
+                Shadow::new()
+                    .x(3.0)
+                    .y(3.0)
+                    .blur(6.0)
+                    .color(Color::BLACK.with_a(102)),
+            )
             .child(
                 rect()
                     .width(Size::Fill)
@@ -97,7 +105,7 @@ impl Component for DepartureComponent {
                         rect()
                             .height(Size::px(70.0))
                             .width(Size::px(70.0))
-                            .padding(8.0)
+                            .padding(10.0)
                             .center()
                             .child(
                                 SvgViewer::new(transport_icon)
@@ -109,6 +117,8 @@ impl Component for DepartureComponent {
                         rect()
                             .width(Size::flex(1.0))
                             .height(Size::Fill)
+                            .spacing(4.0)
+                            .overflow(Overflow::Clip)
                             .main_align(Alignment::Center)
                             .child(
                                 rect()
@@ -134,6 +144,7 @@ impl Component for DepartureComponent {
                                         label()
                                             .font_size(20.0)
                                             .font_weight(FontWeight::BOLD)
+                                            .max_lines(1)
                                             .text(self.departure.direction.to_string()),
                                     ),
                             )
@@ -141,6 +152,7 @@ impl Component for DepartureComponent {
                                 label()
                                     .color(theme.read().colors.text_primary)
                                     .font_size(15.0)
+                                    .max_lines(1)
                                     .text({
                                         self.departure
                                             .scheduled_times
@@ -157,105 +169,94 @@ impl Component for DepartureComponent {
                                             .collect::<Vec<String>>()
                                             .join(", ")
                                     }),
-                            )
-                            .child(
-                                label()
-                                    .color(theme.read().colors.text_primary)
-                                    .font_size(15.0)
-                                    .text({
-                                        filtered_route_times
-                                            .iter()
-                                            .map(|time| {
-                                                let time = TimeDelta::minutes(*time as i64);
-                                                format!(
-                                                    "{}:{:02}",
-                                                    time.num_hours(),
-                                                    time.num_minutes() % 60
-                                                )
-                                            })
-                                            .collect::<Vec<String>>()
-                                            .join(", ")
-                                    }),
-                            ),
+                            ), // .child(
+                               //     label()
+                               //         .color(theme.read().colors.text_primary)
+                               //         .font_size(15.0)
+                               //         .text({
+                               //             filtered_route_times
+                               //                 .iter()
+                               //                 .map(|time| {
+                               //                     let time = TimeDelta::minutes(*time as i64);
+                               //                     format!(
+                               //                         "{}:{:02}",
+                               //                         time.num_hours(),
+                               //                         time.num_minutes() % 60
+                               //                     )
+                               //                 })
+                               //                 .collect::<Vec<String>>()
+                               //                 .join(", ")
+                               //         }),
+                               // ),
                     )
                     .child({
-                        let departure_time = *departure_time.read() as f64;
-                        if departure_time <= 30.0 {
-                            rect()
-                                .height(Size::px(70.0))
-                                .width(Size::px(70.0))
-                                .center()
-                                .child(
-                                    label()
-                                        .color(theme.read().colors.text_primary)
-                                        .font_size(25.0)
-                                        .font_weight(FontWeight::BOLD)
-                                        .text("now"),
-                                )
-                                .child(
-                                    label()
-                                        .color(theme.read().colors.text_primary)
-                                        .font_size(14.0)
-                                        .text(departure_time.to_string()),
-                                )
-                        } else if departure_time < 60.0 {
-                            rect()
-                                .height(Size::px(70.0))
-                                .width(Size::px(70.0))
-                                .center()
-                                .child(
-                                    label()
-                                        .color(theme.read().colors.text_primary)
-                                        .font_size(25.0)
-                                        .font_weight(FontWeight::BOLD)
-                                        .text(format!("{}", departure_time)),
-                                )
-                                .child(
-                                    label()
-                                        .color(theme.read().colors.text_primary)
-                                        .font_size(14.0)
-                                        .text("seconds"),
-                                )
-                        } else if departure_time < 60.0 * 60.0 {
-                            rect()
-                                .height(Size::px(70.0))
-                                .width(Size::px(70.0))
-                                .center()
-                                .child(
-                                    label()
-                                        .color(theme.read().colors.text_primary)
-                                        .font_size(25.0)
-                                        .font_weight(FontWeight::BOLD)
-                                        .text(format!("{}", (departure_time / 60.0).floor())),
-                                )
-                                .child(
-                                    label()
-                                        .color(theme.read().colors.text_primary)
-                                        .font_size(14.0)
-                                        .text("minutes"),
-                                )
-                        } else {
-                            rect()
-                                .height(Size::px(70.0))
-                                .width(Size::px(70.0))
-                                .center()
-                                .child(
-                                    label()
-                                        .color(theme.read().colors.text_primary)
-                                        .font_size(25.0)
-                                        .font_weight(FontWeight::BOLD)
-                                        .text(format!(
-                                            "{}",
-                                            (departure_time / 60.0 * 60.0).floor()
-                                        )),
-                                )
-                                .child(
-                                    label()
-                                        .color(theme.read().colors.text_primary)
-                                        .font_size(14.0)
-                                        .text("hours"),
-                                )
-                        }
+                        rect()
+                            .height(Size::px(70.0))
+                            .width(Size::px(70.0))
+                            .center()
+                            .children({
+                                let departure_time = *departure_time.read() as f64;
+                                if departure_time <= 30.0 {
+                                    [
+                                        label()
+                                            .color(theme.read().colors.text_primary)
+                                            .font_size(25.0)
+                                            .font_weight(FontWeight::BOLD)
+                                            .text("now")
+                                            .into_element(),
+                                        label()
+                                            .color(theme.read().colors.text_primary)
+                                            .font_size(14.0)
+                                            .text(departure_time.to_string())
+                                            .into_element(),
+                                    ]
+                                } else if departure_time < 60.0 {
+                                    [
+                                        label()
+                                            .color(theme.read().colors.text_primary)
+                                            .font_size(25.0)
+                                            .font_weight(FontWeight::BOLD)
+                                            .text(format!("{}", departure_time))
+                                            .into_element(),
+                                        label()
+                                            .color(theme.read().colors.text_primary)
+                                            .font_size(14.0)
+                                            .text("seconds")
+                                            .into_element(),
+                                    ]
+                                } else if departure_time < 60.0 * 60.0 {
+                                    [
+                                        label()
+                                            .color(theme.read().colors.text_primary)
+                                            .font_size(25.0)
+                                            .font_weight(FontWeight::BOLD)
+                                            .text(format!("{}", (departure_time / 60.0).floor()))
+                                            .into_element(),
+                                        label()
+                                            .color(theme.read().colors.text_primary)
+                                            .font_size(14.0)
+                                            .text("minutes")
+                                            .into_element(),
+                                    ]
+                                } else {
+                                    [
+                                        label()
+                                            .color(theme.read().colors.text_primary)
+                                            .font_size(25.0)
+                                            .font_weight(FontWeight::BOLD)
+                                            .text(format!(
+                                                "{}",
+                                                (departure_time / 60.0 * 60.0).floor()
+                                            ))
+                                            .into_element(),
+                                        label()
+                                            .color(theme.read().colors.text_primary)
+                                            .font_size(14.0)
+                                            .text("hours")
+                                            .into_element(),
+                                    ]
+                                }
+                            })
                     }),
             )
             .child(rect().width(Size::Fill))

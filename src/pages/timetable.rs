@@ -14,11 +14,14 @@ impl Component for Timetable {
                 .width(Size::Fill)
                 .height(Size::Fill)
                 .child(
-                    rect().padding((4.0, 0.0, 0.0, 0.0)).children(
-                        stops_radius
-                            .into_iter()
-                            .map(|siri_id| StopComponent::new(siri_id).into()),
-                    ),
+                    rect()
+                        .min_height(Size::percent(100.0))
+                        .padding((4.0, 0.0, 0.0, 0.0))
+                        .children(
+                            stops_radius
+                                .into_iter()
+                                .map(|siri_id| StopComponent::new(siri_id).into()),
+                        ),
                 ),
         )
     }
