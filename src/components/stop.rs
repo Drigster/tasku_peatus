@@ -24,28 +24,17 @@ impl Component for StopComponent {
         let siri_id = self.siri_id.clone();
 
         let radio = use_radio(DataChannel::StopsUpdate);
-        let stops = radio.slice_current(|s| &s.stops);
-        let binding = stops.read();
-        let stop_data = binding.iter().find(|e| e.siri_id == siri_id).unwrap();
+        let stops = &radio.read().stops;
+        let stop_data = stops.iter().find(|e| e.siri_id == siri_id).unwrap();
         let stops_distances = radio
             .slice(DataChannel::StopsDistancesUpdate(siri_id.clone()), |s| {
                 &s.stops_distances
             });
         let departures = radio.slice(DataChannel::DeparturesUpdate, |s| &s.departures);
-        let binding = departures.read();
-        let departures = binding.get(&siri_id);
-        let routes = radio.slice(DataChannel::RoutesUpdate, |s| &s.routes);
-        let binding = routes.read();
-        let route = binding.get(&stop_data.stop_id);
-        match route {
-            Some(route_times) => {
-                if route_times.is_empty() {
-                    return rect();
-                }
-            }
-            None => {
-                return rect();
-            }
+        let departures = departures.read();
+
+        if stop_data.routes.is_empty() {
+            return rect();
         };
 
         let mut open = use_state(|| true);
@@ -161,41 +150,64 @@ impl Component for StopComponent {
                     .spacing(4.0)
                     .padding((0.0, 4.0, 4.0, 4.0))
                     .overflow(Overflow::Clip)
-                    .children(if let Some(departures) = departures {
-                        departures
-                            .iter()
-                            .cloned()
-                            .map(|departure| {
-                                DepartureComponent::new(stop_data.stop_id.clone(), departure).into()
-                            })
-                            .collect()
-                    } else {
-                        vec![
-                            rect()
-                                .width(Size::Fill)
-                                .height(Size::px(70.0))
-                                .spacing(4.0)
-                                .corner_radius(6.0)
-                                .background(theme.read().colors.primary)
-                                .direction(Direction::Horizontal)
-                                .content(Content::Flex)
-                                // .shadow(
-                                //     Shadow::new()
-                                //         .x(3.0)
-                                //         .y(3.0)
-                                //         .blur(6.0)
-                                //         .color(Color::BLACK.with_a(102)),
-                                // )
-                                .child(
-                                    rect()
-                                        .width(Size::Fill)
-                                        .height(Size::Fill)
-                                        .center()
-                                        .child(label().text("No departures")),
-                                )
-                                .into(),
-                        ]
-                    }),
+                    .children(
+                        if !stop_data.routes.is_empty()
+                            && let Some(departure) = departures.get(&siri_id)
+                        {
+                            stop_data
+                                .routes
+                                .iter()
+                                .cloned()
+                                .filter_map(|route| {
+                                    let dep = departure.get(&(
+                                        route.route_type.clone(),
+                                        route
+                                            .route_name
+                                            .split(" - ")
+                                            .last()
+                                            .unwrap_or(&route.route_name)
+                                            .to_string(),
+                                    ));
+                                    if dep.is_none() || route.route_name.contains("depoo") {
+                                        return None;
+                                    }
+                                    Some(
+                                        DepartureComponent::new(
+                                            route.clone(),
+                                            dep.unwrap().clone(),
+                                        )
+                                        .into(),
+                                    )
+                                })
+                                .collect()
+                        } else {
+                            vec![
+                                rect()
+                                    .width(Size::Fill)
+                                    .height(Size::px(70.0))
+                                    .spacing(4.0)
+                                    .corner_radius(6.0)
+                                    .background(theme.read().colors.primary)
+                                    .direction(Direction::Horizontal)
+                                    .content(Content::Flex)
+                                    .shadow(
+                                        Shadow::new()
+                                            .x(3.0)
+                                            .y(3.0)
+                                            .blur(6.0)
+                                            .color(Color::BLACK.with_a(102)),
+                                    )
+                                    .child(
+                                        rect()
+                                            .width(Size::Fill)
+                                            .height(Size::Fill)
+                                            .center()
+                                            .child(label().text("No departures")),
+                                    )
+                                    .into(),
+                            ]
+                        },
+                    ),
             )
     }
 }

@@ -3,6 +3,10 @@ name = "tasku_peatus"
 version = "0.5.0"
 edition = "2024"
 
+[features]
+devtools = ["freya/devtools"]
+hotreload = ["freya/hotreload"]
+
 [dependencies]
 blocking = "1.6.2"
 chrono = "0.4.44"

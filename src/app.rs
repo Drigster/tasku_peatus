@@ -8,13 +8,11 @@ use freya::{
 };
 use freya_router::prelude::Router;
 
-use crate::ChannelSend;
 use crate::{
     Data, DataChannel,
     utils::{
         departures_parser::get_departures,
-        routes_parser::{self},
-        stops_parser::{self, Stop},
+        stops_parser::{self},
     },
 };
 use crate::{layouts::AppLayout, pages::Timetable};
@@ -46,7 +44,6 @@ impl App for MyApp {
         let stops = radio.slice_mut(DataChannel::StopsUpdate, |s| &mut s.stops);
         let mut stops_radius =
             radio.slice_mut(DataChannel::StopsRadiusUpdate, |s| &mut s.stops_radius);
-        let routes = radio.slice_mut(DataChannel::RoutesUpdate, |s| &mut s.routes);
         let mut departures_next_update = radio.slice_mut(DataChannel::DeparturesUpdate, |s| {
             &mut s.departures_next_update
         });
@@ -61,18 +58,6 @@ impl App for MyApp {
 
                 let new_stops = stops_parser::get_stops().await.unwrap();
                 *stops.write() = new_stops;
-            });
-        });
-
-        use_hook(|| {
-            let mut routes = routes.clone();
-            spawn(async move {
-                if !routes.read().is_empty() {
-                    return;
-                }
-
-                let new_routes = routes_parser::get_routes().await.unwrap();
-                *routes.write() = new_routes;
             });
         });
 
@@ -176,7 +161,7 @@ impl App for MyApp {
                         continue;
                     }
 
-                    if stops.read().is_empty() || routes.read().is_empty() {
+                    if stops.read().is_empty() {
                         next_update += Duration::from_millis(10);
                         continue;
                     }

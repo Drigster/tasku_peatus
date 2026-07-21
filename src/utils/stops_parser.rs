@@ -1,39 +1,65 @@
 use chrono::{DateTime, Utc};
 use geo::{Distance, Haversine, Point};
 use revision::{from_slice, revisioned, to_vec};
-use serde::Deserialize;
-use std::{collections::HashMap, fs, io, path::PathBuf};
+use std::{collections::HashMap, fs, path::PathBuf};
 
-use crate::utils::{preferences::get_cache_dir, text_utils::parse_csv_line};
+use crate::utils::{
+    preferences::get_cache_dir,
+    routes_parser::{StopRoute, get_routes},
+    text_utils::parse_csv_line,
+};
 
 static STOPS_URL: &str = "https://transport.tallinn.ee/data/stops.txt";
 
 pub async fn get_stops() -> Result<Vec<Stop>, Box<dyn std::error::Error>> {
     let last_modified = DateTime::<Utc>::MAX_UTC;
-    if last_modified < get_last_modified_version() || !get_stops_file_path().exists() {
-        blocking::unblock(|| {
-            let mut result = ureq::get(STOPS_URL).call()?;
-            let body = result.body_mut().read_to_string()?;
-
-            let stops = parse_stops(body);
-
-            let bytes = to_vec(&stops).unwrap();
-            fs::write(get_stops_file_path(), &bytes)?;
-
-            Ok(stops)
-        })
-        .await
-        .map_err(|e: ureq::Error| -> Box<dyn std::error::Error> { Box::new(e) })
-    } else {
+    if get_stops_file_path().exists() && last_modified >= get_last_modified_version() {
         let stops = blocking::unblock(|| {
-            let bytes = fs::read(get_stops_file_path())?;
-            let data: Vec<Stop> = from_slice(&bytes).unwrap();
-            Ok::<Vec<Stop>, io::Error>(data)
+            let bytes = match fs::read(get_stops_file_path()) {
+                Ok(bytes) => bytes,
+                Err(err) => return Err(err.to_string()),
+            };
+
+            let data: Vec<Stop> = match from_slice(&bytes) {
+                Ok(data) => data,
+                Err(err) => return Err(err.to_string()),
+            };
+            Ok::<Vec<Stop>, String>(data)
         })
-        .await?;
+        .await;
+
+        match stops {
+            Ok(stops) => return Ok(stops),
+            Err(err) => println!("Error reading stops: {err}"),
+        }
+    }
+    let mut stops = blocking::unblock(|| {
+        let mut result = ureq::get(STOPS_URL).call().expect("Error getting stops");
+        let body = result
+            .body_mut()
+            .read_to_string()
+            .expect("Error reading body");
+
+        parse_stops(body)
+    })
+    .await;
+
+    let routes = get_routes().await.unwrap();
+
+    for stop in stops.iter_mut() {
+        if let Some(route) = routes.get(&stop.stop_id) {
+            stop.routes = route.clone();
+        }
+    }
+
+    blocking::unblock(|| {
+        let bytes = to_vec(&stops).unwrap();
+        fs::write(get_stops_file_path(), &bytes)?;
 
         Ok(stops)
-    }
+    })
+    .await
+    .map_err(|e: ureq::Error| -> Box<dyn std::error::Error> { Box::new(e) })
 }
 
 pub fn get_stops_in_radius(
@@ -140,7 +166,6 @@ pub fn parse_stops(data: String) -> Vec<Stop> {
             }
         };
         let name = parts[name_index].clone();
-        let is_favorite = false;
 
         stops.push(Stop {
             stop_id,
@@ -149,7 +174,7 @@ pub fn parse_stops(data: String) -> Vec<Stop> {
             lon,
             stops: vec![],
             name,
-            is_favorite,
+            routes: vec![],
         });
     }
 
@@ -180,23 +205,16 @@ pub fn get_stops_file_path() -> PathBuf {
     cache_dir.join("stops.dat")
 }
 
-#[revisioned(revision = 1)]
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[revisioned(revision = 2)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Stop {
-    #[serde(rename = "ID")]
     pub stop_id: String,
-    #[serde(rename = "SiriID")]
     pub siri_id: String,
-    #[serde(rename = "Lat")]
     pub lat: f64,
-    #[serde(rename = "Lng")]
     pub lon: f64,
-    #[serde(rename = "Stops")]
     pub stops: Vec<String>,
-    #[serde(rename = "Name")]
     pub name: String,
-    #[serde(skip)]
-    pub is_favorite: bool,
+    pub routes: Vec<StopRoute>,
 }
 
 fn meters_to_degrees_lat(meters: f64) -> f64 {

@@ -1,22 +1,19 @@
-use std::{collections::HashMap, time::Duration, vec};
+use std::time::Duration;
 
-use chrono::{Datelike, Local, TimeDelta, Timelike};
-use freya::{prelude::*, radio::use_radio};
+use chrono::TimeDelta;
+use freya::prelude::*;
 
-use crate::{
-    DataChannel,
-    utils::{departures_parser::Departure, text_utils::get_transport_icon_and_color},
-};
+use crate::utils::{departures_parser::Departure, routes_parser::StopRoute};
 
 #[derive(Clone, PartialEq)]
 pub struct DepartureComponent {
     pub departure: Departure,
-    pub stop_id: String,
+    pub route: StopRoute,
 }
 
 impl DepartureComponent {
-    pub fn new(stop_id: String, departure: Departure) -> Self {
-        Self { departure, stop_id }
+    pub fn new(route: StopRoute, departure: Departure) -> Self {
+        Self { route, departure }
     }
 }
 
@@ -55,7 +52,7 @@ impl Component for DepartureComponent {
         //     .collect::<Vec<i32>>();
 
         let (transport_icon, transport_color) =
-            get_transport_icon_and_color(self.departure.route_type.clone().into());
+            self.route.route_type.get_transport_icon_and_color();
 
         use_side_effect_with_deps(&self.departure.until, move |value| {
             departure_time.set(*value);
@@ -137,7 +134,7 @@ impl Component for DepartureComponent {
                                                     .color(theme.read().colors.text_primary)
                                                     .font_size(13.0)
                                                     .font_weight(FontWeight::BLACK)
-                                                    .text(self.departure.route.clone()),
+                                                    .text(self.route.route_type.get_route()),
                                             ),
                                     )
                                     .child(
@@ -145,7 +142,14 @@ impl Component for DepartureComponent {
                                             .font_size(20.0)
                                             .font_weight(FontWeight::BOLD)
                                             .max_lines(1)
-                                            .text(self.departure.direction.to_string()),
+                                            .text(
+                                                self.route
+                                                    .route_name
+                                                    .split(" - ")
+                                                    .last()
+                                                    .unwrap_or(&self.route.route_name)
+                                                    .to_string(),
+                                            ),
                                     ),
                             )
                             .child(

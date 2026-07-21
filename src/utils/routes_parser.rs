@@ -7,39 +7,57 @@ use crate::utils::{
 };
 
 static ROUTES_URL: &str = "https://transport.tallinn.ee/data/routes.txt";
-pub type Routes = HashMap<String, HashMap<(RouteType, String), HashMap<u8, Vec<i32>>>>;
+//                        StopId
+pub type Routes = HashMap<String, Vec<StopRoute>>;
+
+#[revisioned(revision = 1)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct StopRoute {
+    pub route_type: RouteType,
+    pub weekdays_times: HashMap<u8, Vec<i32>>,
+    pub route_name: String,
+}
 
 pub async fn get_routes() -> Result<Routes, Box<dyn std::error::Error>> {
     let last_modified = DateTime::<Utc>::MAX_UTC;
-    if last_modified < get_last_modified_version() || !get_routes_file_path().exists() {
-        println!("Routes not found or outdated, downloading");
+    if get_routes_file_path().exists() && last_modified >= get_last_modified_version() {
         let routes = blocking::unblock(|| {
-            let mut result = ureq::get(ROUTES_URL).call()?;
-            let body = result.body_mut().read_to_string()?;
+            let bytes = match fs::read(get_routes_file_path()) {
+                Ok(bytes) => bytes,
+                Err(err) => return Err(err.to_string()),
+            };
 
-            fs::write(get_routes_file_path(), &body)?;
-
-            Ok(parse_routes(body))
+            let data: Routes = match from_slice(&bytes) {
+                Ok(data) => data,
+                Err(err) => return Err(err.to_string()),
+            };
+            Ok::<Routes, String>(data)
         })
-        .await
-        .map_err(|e: ureq::Error| -> Box<dyn std::error::Error> { Box::new(e) })?;
+        .await;
 
-        let routes = convert_route(routes);
-
-        let bytes = to_vec(&routes).unwrap();
-        fs::write(get_routes_file_path(), &bytes)?;
-
-        Ok(routes)
-    } else {
-        let routes = blocking::unblock(|| {
-            let bytes = fs::read(get_routes_file_path())?;
-            let data: Routes = from_slice(&bytes).unwrap();
-            Ok::<Routes, io::Error>(data)
-        })
-        .await?;
-
-        Ok(routes)
+        match routes {
+            Ok(routes) => return Ok(routes),
+            Err(err) => println!("Error reading routes: {err}"),
+        }
     }
+
+    let routes = blocking::unblock(|| {
+        let mut result = ureq::get(ROUTES_URL).call()?;
+        let body = result.body_mut().read_to_string()?;
+
+        fs::write(get_routes_file_path(), &body)?;
+
+        Ok(parse_routes(body))
+    })
+    .await
+    .map_err(|e: ureq::Error| -> Box<dyn std::error::Error> { Box::new(e) })?;
+
+    let routes = convert_route(routes);
+
+    let bytes = to_vec(&routes).unwrap();
+    fs::write(get_routes_file_path(), &bytes)?;
+
+    Ok(routes)
 }
 
 fn parse_routes(data: String) -> Vec<Route> {
@@ -112,7 +130,7 @@ fn parse_routes(data: String) -> Vec<Route> {
         let route_num = parts[route_num_index].clone();
         let authority = parts[authority_index].clone();
         let city = parts[city_index].clone();
-        let transport = RouteType::from(&parts[transport_index]);
+        let transport = parts[transport_index].clone();
         let operator = parts[operator_index].clone();
         let validity_periods = parts[validity_periods_index]
             .clone()
@@ -197,7 +215,7 @@ fn convert_route(routes: Vec<Route>) -> Routes {
 
     for route in routes {
         for (i, route_stop) in route.route_stops.iter().enumerate() {
-            let stop_times = match route.times {
+            let weekdays_times = match route.times {
                 Some(ref times) => {
                     let mut weekdays_times: HashMap<u8, Vec<i32>> = HashMap::new();
                     for (j, weekdays) in times.weekdays.iter().enumerate() {
@@ -220,29 +238,34 @@ fn convert_route(routes: Vec<Route>) -> Routes {
             };
 
             if let Some(stop_routes) = converted_routes.get_mut(route_stop) {
-                if let Some(stop_route) =
-                    stop_routes.get_mut(&(route.transport.clone(), route.route_num.clone()))
-                {
-                    for (key, values) in stop_times {
-                        stop_route
-                            .entry(key)
-                            .and_modify(|v| v.append(&mut values.clone()))
-                            .or_insert(values);
-                    }
-                } else {
-                    stop_routes.insert(
-                        (route.transport.clone(), route.route_num.clone()),
-                        stop_times,
-                    );
-                }
+                // if let Some(stop_route) =
+                //     stop_routes.get_mut(&(route.transport.clone(), route.route_num.clone()))
+                // {
+                //     for (key, values) in weekdays_times {
+                //         stop_route
+                //             .entry(key)
+                //             .and_modify(|v| v.append(&mut values.clone()))
+                //             .or_insert(values);
+                //     }
+                // } else {
+                //     stop_routes.insert(
+                //         (route.transport.clone(), route.route_num.clone()),
+                //         weekdays_times,
+                //     );
+                // }
+                let route = StopRoute {
+                    route_type: RouteType::from((route.transport.clone(), route.route_num.clone())),
+                    weekdays_times,
+                    route_name: route.route_name.clone(),
+                };
+                stop_routes.push(route);
             } else {
-                converted_routes.insert(
-                    route_stop.clone(),
-                    HashMap::from([(
-                        (route.transport.clone(), route.route_num.clone()),
-                        stop_times,
-                    )]),
-                );
+                let route = StopRoute {
+                    route_type: RouteType::from((route.transport.clone(), route.route_num.clone())),
+                    weekdays_times,
+                    route_name: route.route_name.clone(),
+                };
+                converted_routes.insert(route_stop.clone(), vec![route]);
             }
         }
     }
@@ -256,7 +279,7 @@ struct Route {
     route_num: String,
     authority: String,
     city: String,
-    transport: RouteType,
+    transport: String,
     operator: String,
     validity_periods: Vec<u64>,
     special_dates: Vec<u64>,
