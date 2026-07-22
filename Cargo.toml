@@ -6,6 +6,7 @@ edition = "2024"
 [features]
 devtools = ["freya/devtools"]
 hotreload = ["freya/hotreload"]
+geoclue = ["zbus"]
 
 [dependencies]
 blocking = "1.6.2"
@@ -28,6 +29,7 @@ revision = "0.30.0"
 serde = { version = "1.0.228", features = ["derive"] }
 smol = "2.0.2"
 ureq = "3.3.0"
+zbus = { version = "5.18.0", optional = true }
 
 [target.'cfg(target_os="android")'.dependencies]
 android_logger = "0.15.1"

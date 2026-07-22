@@ -133,14 +133,51 @@ impl App for MyApp {
                         }
                     }
                 }
-                #[cfg(not(target_os = "android"))]
+                #[cfg(feature = "geoclue")]
+                {
+                    use crate::ChannelSend;
+                    use crate::utils::geoclue::{get_location, start_location_updates};
+                    let state_tx = radio.read().state_tx.clone().unwrap();
+
+                    // match get_location().await {
+                    //     Ok(last_known_location) => {
+                    //         println!("[Print] Last Known Location: {:?}", last_known_location);
+                    //         radio
+                    //             .write_channel(DataChannel::LocationEnabledUpdate)
+                    //             .is_location_enabled = true;
+                    //         radio.write_channel(DataChannel::LocationUpdate).location =
+                    //             Some((last_known_location.0, last_known_location.1));
+                    //     }
+                    //     Err(e) => {
+                    //         println!("[Print] Error getting location: {e}");
+                    //     }
+                    // }
+                    radio
+                        .write_channel(DataChannel::LocationEnabledUpdate)
+                        .is_location_enabled = true;
+                    match start_location_updates(move |(lat, lng, accuracy)| {
+                        println!(
+                            "[Print] Location changed: lat={lat}, lng={lng}, accuracy={accuracy}"
+                        );
+                        let _ = state_tx.unbounded_send(ChannelSend::LocationUpdate((lat, lng)));
+                    })
+                    .await
+                    {
+                        Ok(callback_ptr) => {
+                            println!("[Print] Location updates started: {callback_ptr:?}");
+                        }
+                        Err(e) => {
+                            println!("[Print] Error starting location updates: {e}");
+                        }
+                    }
+                }
+                #[cfg(not(feature = "geoclue"))]
                 {
                     radio
                         .write_channel(DataChannel::LocationEnabledUpdate)
                         .is_location_enabled = true;
                     radio.write_channel(DataChannel::LocationUpdate).location =
-                        // Some((59.436552, 24.753048));
-                        Some((59.443982, 24.722226));
+                        Some((59.436552, 24.753048));
                 }
             });
         });

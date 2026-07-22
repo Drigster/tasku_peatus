@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use revision::{from_slice, revisioned, to_vec};
-use std::{collections::HashMap, fs, io, path::PathBuf};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use crate::utils::{
     departures_parser::RouteType, preferences::get_cache_dir, text_utils::parse_csv_line,
