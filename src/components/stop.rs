@@ -176,7 +176,7 @@ impl Component for StopComponent {
                                             route.clone(),
                                             dep.unwrap().clone(),
                                         )
-                                        .into(),
+                                        .into_element(),
                                     )
                                 })
                                 .collect()
@@ -204,7 +204,7 @@ impl Component for StopComponent {
                                             .center()
                                             .child(label().text("No departures")),
                                     )
-                                    .into(),
+                                    .into_element(),
                             ]
                         },
                     ),

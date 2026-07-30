@@ -17,7 +17,7 @@ impl Component for Timetable {
                     rect().padding((4.0, 0.0, 0.0, 0.0)).children(
                         stops_radius
                             .into_iter()
-                            .map(|siri_id| StopComponent::new(siri_id).into()),
+                            .map(|siri_id| StopComponent::new(siri_id)),
                     ),
                 ),
         )

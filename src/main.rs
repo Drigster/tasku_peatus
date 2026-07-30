@@ -49,6 +49,7 @@ fn main() {
             .with_window(
                 WindowConfig::new_app(MyApp { radio_station })
                     .with_size(420.0, 900.0)
+                    .with_custom_scale_factor(if cfg!(feature = "scaled") { 2.0 } else { 1.0 })
                     .with_decorations(false),
             ),
     )

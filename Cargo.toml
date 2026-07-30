@@ -7,6 +7,7 @@ edition = "2024"
 devtools = ["freya/devtools"]
 hotreload = ["freya/hotreload"]
 geoclue = ["zbus"]
+scaled = []
 
 [dependencies]
 blocking = "1.6.2"
