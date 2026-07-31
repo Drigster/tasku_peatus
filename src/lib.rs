@@ -3,6 +3,7 @@ use winit::platform::android::activity::AndroidApp;
 
 mod app;
 mod components;
+mod hooks;
 mod launch_config;
 mod layouts;
 mod pages;
