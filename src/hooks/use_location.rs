@@ -1,6 +1,6 @@
 use freya::{prelude::*, radio::use_radio};
 
-use crate::launch_config::DataChannel;
+use crate::launch_config::{AppState, DataChannel};
 
 pub fn use_location() {
     let radio = use_radio(DataChannel::NoUpdate);
@@ -10,6 +10,21 @@ pub fn use_location() {
     let mut location = radio.slice_mut(DataChannel::LocationUpdate, |s| &mut s.location);
     #[allow(unused)]
     let state_tx = radio.read().state_tx.clone().unwrap();
+    let mut state = radio.slice_mut(DataChannel::StateUpdate, |s| &mut s.state);
+
+    let mut is_loading = use_state(|| true);
+
+    let is_location_enabled_clone = is_location_enabled.clone();
+    let location_clone = location.clone();
+    use_side_effect(move || {
+        if is_loading() == false {
+            if *is_location_enabled_clone.read() == false {
+                *state.write() = Some(AppState::LocationDisabled);
+            } else if location_clone.read().is_none() {
+                *state.write() = Some(AppState::WitingForLocation);
+            }
+        }
+    });
 
     #[cfg(target_os = "android")]
     let state_tx_clone = state_tx.clone();
@@ -100,8 +115,9 @@ pub fn use_location() {
             #[cfg(all(not(feature = "geoclue"), not(target_os = "android")))]
             {
                 *is_location_enabled.write() = true;
-                *location.write() = Some((59.436552, 24.753048));
+                // *location.write() = Some((59.436552, 24.753048));
             }
         });
+        *is_loading.write() = false;
     });
 }

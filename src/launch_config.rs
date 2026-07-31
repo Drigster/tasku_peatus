@@ -47,11 +47,10 @@ pub fn build_launch_config() -> freya::prelude::LaunchConfig {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-pub enum ErrorState {
-    NoPermissions,
-    LocationWatcherError(String),
-    NoLocation(String),
-    StopsUpdateError(String),
+pub enum AppState {
+    LocationDisabled,
+    WitingForLocation,
+    LocationError(String),
 }
 
 #[derive(Default, Clone)]
@@ -62,10 +61,10 @@ pub struct Data {
     pub departures: Departures,
     pub departures_next_update: DateTime<Utc>,
 
+    pub is_location_enabled: bool,
     pub location: Option<(f64, f64)>,
 
-    pub is_location_enabled: bool,
-    pub error_state: Option<ErrorState>,
+    pub state: Option<AppState>,
 
     pub state_tx: Option<futures_channel::mpsc::UnboundedSender<ChannelSend>>,
 }
@@ -83,6 +82,7 @@ pub enum DataChannel {
     LocationEnabledUpdate,
     ErrorStateUpdate,
     RoutesUpdate,
+    StateUpdate,
 }
 
 impl RadioChannel<Data> for DataChannel {}
