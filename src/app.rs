@@ -88,6 +88,7 @@ impl App for MyApp {
             spawn(async move {
                 #[cfg(target_os = "android")]
                 {
+                    use crate::ChannelSend;
                     use crate::utils::jni_utils::{
                         check_and_request_permissions, get_last_known_location,
                         start_location_updates,

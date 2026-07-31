@@ -26,9 +26,7 @@ mod utils;
 use app::MyApp;
 
 #[cfg(target_os = "android")]
-use crate::utils::{
-    departures_parser::Departure, routes_parser::DepartureTimes, stops_parser::Stop,
-};
+use crate::utils::{departures_parser::Departures, stops_parser::Stop};
 
 #[cfg(target_os = "android")]
 pub static APP_DIR_NAME: &str = "TaskuPeatus";
@@ -74,7 +72,6 @@ fn android_main(droid_app: AndroidApp) {
                     }
                 }
             })
-            .with_window(WindowConfig::new_app(MyApp { radio_station }))
             .with_event_loop(event_loop),
     )
 }
@@ -94,9 +91,8 @@ pub struct Data {
     stops: Vec<Stop>,
     stops_radius: Vec<String>,
     stops_distances: HashMap<String, u64>,
-    departures: HashMap<String, Vec<Departure>>,
+    departures: Departures,
     departures_next_update: DateTime<Utc>,
-    routes: HashMap<String, HashMap<String, DepartureTimes>>,
 
     location: Option<(f64, f64)>,
 
