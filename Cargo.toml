@@ -42,9 +42,9 @@ jni = "0.21.1"
 
 [lib]
 path = "src/lib.rs"
-name = "android_example"
+name = "tasku_peatus"
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 path = "src/main.rs"
-name = "desktop_example"
+name = "tasku_peatus"
