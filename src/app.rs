@@ -9,7 +9,7 @@ use freya::{
 use freya_router::prelude::Router;
 
 use crate::{
-    Data, DataChannel,
+    launch_config::{Data, DataChannel},
     utils::{
         departures_parser::get_departures,
         stops_parser::{self},
@@ -67,7 +67,7 @@ impl App for MyApp {
         {
             let state_tx_clone = state_tx.clone();
             use_hook(move || {
-                use crate::ChannelSend;
+                use crate::launch_config::ChannelSend;
                 use crate::utils::jni_utils::start_location_enabled_updates;
 
                 match start_location_enabled_updates(move |enabled| {
@@ -88,7 +88,7 @@ impl App for MyApp {
             spawn(async move {
                 #[cfg(target_os = "android")]
                 {
-                    use crate::ChannelSend;
+                    use crate::launch_config::ChannelSend;
                     use crate::utils::jni_utils::{
                         check_and_request_permissions, get_last_known_location,
                         start_location_updates,
@@ -136,23 +136,10 @@ impl App for MyApp {
                 }
                 #[cfg(feature = "geoclue")]
                 {
-                    use crate::ChannelSend;
-                    use crate::utils::geoclue::{get_location, start_location_updates};
+                    use crate::launch_config::ChannelSend;
+                    use crate::utils::geoclue::start_location_updates;
                     let state_tx = radio.read().state_tx.clone().unwrap();
 
-                    // match get_location().await {
-                    //     Ok(last_known_location) => {
-                    //         println!("[Print] Last Known Location: {:?}", last_known_location);
-                    //         radio
-                    //             .write_channel(DataChannel::LocationEnabledUpdate)
-                    //             .is_location_enabled = true;
-                    //         radio.write_channel(DataChannel::LocationUpdate).location =
-                    //             Some((last_known_location.0, last_known_location.1));
-                    //     }
-                    //     Err(e) => {
-                    //         println!("[Print] Error getting location: {e}");
-                    //     }
-                    // }
                     radio
                         .write_channel(DataChannel::LocationEnabledUpdate)
                         .is_location_enabled = true;

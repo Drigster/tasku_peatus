@@ -3,10 +3,13 @@ use geo::{Distance, Haversine, Point};
 use revision::{from_slice, revisioned, to_vec};
 use std::{collections::HashMap, fs, path::PathBuf};
 
-use crate::utils::{
-    preferences::get_cache_dir,
-    routes_parser::{StopRoute, get_routes},
-    text_utils::parse_csv_line,
+use crate::{
+    launch_config::APP_DIR_NAME,
+    utils::{
+        preferences::get_cache_dir,
+        routes_parser::{StopRoute, get_routes},
+        text_utils::parse_csv_line,
+    },
 };
 
 static STOPS_URL: &str = "https://transport.tallinn.ee/data/stops.txt";
@@ -198,7 +201,7 @@ pub fn get_last_modified_version() -> DateTime<Utc> {
 }
 
 pub fn get_stops_file_path() -> PathBuf {
-    let cache_dir = get_cache_dir().unwrap().join("tasku_peatus");
+    let cache_dir = get_cache_dir().unwrap().join(APP_DIR_NAME);
     if !cache_dir.exists() {
         std::fs::create_dir_all(&cache_dir).unwrap();
     }

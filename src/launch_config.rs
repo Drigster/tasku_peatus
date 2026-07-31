@@ -1,0 +1,94 @@
+use chrono::{DateTime, Utc};
+use freya::{
+    prelude::*,
+    radio::{RadioChannel, RadioStation},
+};
+use smol::stream::StreamExt;
+use std::collections::HashMap;
+
+use crate::app::MyApp;
+
+use crate::utils::{departures_parser::Departures, stops_parser::Stop};
+
+pub static APP_DIR_NAME: &str = "tasku_peatus";
+
+#[allow(dead_code)]
+pub fn build_launch_config() -> freya::prelude::LaunchConfig {
+    let mut radio_station = RadioStation::create_global(Data::default());
+
+    let (state_tx, mut state_rx) = futures_channel::mpsc::unbounded::<ChannelSend>();
+
+    radio_station.write_channel(DataChannel::NoUpdate).state_tx = Some(state_tx.clone());
+
+    LaunchConfig::new()
+        .with_future(move |_| async move {
+            while let Some(channel_data) = state_rx.next().await {
+                match channel_data {
+                    ChannelSend::LocationUpdate(location) => {
+                        radio_station
+                            .write_channel(DataChannel::LocationUpdate)
+                            .location = Some(location);
+                    }
+                    ChannelSend::LocationEnabledUpdate(enabled) => {
+                        radio_station
+                            .write_channel(DataChannel::LocationEnabledUpdate)
+                            .is_location_enabled = enabled;
+                    }
+                }
+            }
+        })
+        .with_window(
+            WindowConfig::new_app(MyApp { radio_station })
+                .with_size(420.0, 900.0)
+                .with_custom_scale_factor(if cfg!(feature = "scaled") { 2.375 } else { 1.0 })
+                .with_decorations(false),
+        )
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum ErrorState {
+    NoPermissions,
+    LocationWatcherError(String),
+    NoLocation(String),
+    StopsUpdateError(String),
+}
+
+#[derive(Default, Clone)]
+pub struct Data {
+    pub stops: Vec<Stop>,
+    pub stops_radius: Vec<String>,
+    pub stops_distances: HashMap<String, u64>,
+    pub departures: Departures,
+    pub departures_next_update: DateTime<Utc>,
+
+    pub location: Option<(f64, f64)>,
+
+    pub is_location_enabled: bool,
+    pub error_state: Option<ErrorState>,
+
+    pub state_tx: Option<futures_channel::mpsc::UnboundedSender<ChannelSend>>,
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+#[allow(dead_code)]
+pub enum DataChannel {
+    NoUpdate,
+    StopsUpdate,
+    StopsRadiusUpdate,
+    StopsDistancesUpdate(String),
+    DeparturesUpdate,
+    DepartureUpdate(String),
+    LocationUpdate,
+    LocationEnabledUpdate,
+    ErrorStateUpdate,
+    RoutesUpdate,
+}
+
+impl RadioChannel<Data> for DataChannel {}
+
+#[allow(dead_code)]
+pub enum ChannelSend {
+    LocationUpdate((f64, f64)),
+    LocationEnabledUpdate(bool),
+}

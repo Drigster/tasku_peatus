@@ -1,101 +1,17 @@
-use chrono::{DateTime, Utc};
-use freya::{
-    prelude::*,
-    radio::{RadioChannel, RadioStation},
-};
-use smol::stream::StreamExt;
-use std::collections::HashMap;
-
 mod app;
 mod components;
+mod launch_config;
 mod layouts;
 mod pages;
 mod utils;
 
-use app::MyApp;
+use freya::prelude::launch;
 
-use crate::utils::{departures_parser::Departures, stops_parser::Stop};
-
-pub static APP_DIR_NAME: &str = "TaskuPeatus";
+use crate::launch_config::build_launch_config;
 
 #[allow(dead_code)]
 fn main() {
     env_logger::init();
 
-    let mut radio_station = RadioStation::create_global(Data::default());
-
-    let (state_tx, mut state_rx) = futures_channel::mpsc::unbounded::<ChannelSend>();
-
-    radio_station.write_channel(DataChannel::NoUpdate).state_tx = Some(state_tx.clone());
-
-    launch(
-        LaunchConfig::new()
-            .with_future(move |_| async move {
-                while let Some(channel_data) = state_rx.next().await {
-                    match channel_data {
-                        ChannelSend::LocationUpdate(location) => {
-                            radio_station
-                                .write_channel(DataChannel::LocationUpdate)
-                                .location = Some(location);
-                        }
-                        ChannelSend::LocationEnabledUpdate(enabled) => {
-                            radio_station
-                                .write_channel(DataChannel::LocationEnabledUpdate)
-                                .is_location_enabled = enabled;
-                        }
-                    }
-                }
-            })
-            .with_window(
-                WindowConfig::new_app(MyApp { radio_station })
-                    .with_size(420.0, 900.0)
-                    .with_custom_scale_factor(if cfg!(feature = "scaled") { 2.0 } else { 1.0 })
-                    .with_decorations(false),
-            ),
-    )
-}
-
-#[derive(Debug, Clone)]
-pub enum ErrorState {
-    NoPermissions,
-    LocationWatcherError(String),
-    NoLocation(String),
-    StopsUpdateError(String),
-}
-
-#[derive(Default, Clone)]
-pub struct Data {
-    stops: Vec<Stop>,
-    stops_radius: Vec<String>,
-    stops_distances: HashMap<String, u64>,
-    departures: Departures,
-    departures_next_update: DateTime<Utc>,
-
-    location: Option<(f64, f64)>,
-
-    is_location_enabled: bool,
-    error_state: Option<ErrorState>,
-
-    state_tx: Option<futures_channel::mpsc::UnboundedSender<ChannelSend>>,
-}
-
-#[derive(PartialEq, Eq, Clone, Debug, Hash)]
-pub enum DataChannel {
-    NoUpdate,
-    StopsUpdate,
-    StopsRadiusUpdate,
-    StopsDistancesUpdate(String),
-    DeparturesUpdate,
-    DepartureUpdate(String),
-    LocationUpdate,
-    LocationEnabledUpdate,
-    ErrorStateUpdate,
-    RoutesUpdate,
-}
-
-impl RadioChannel<Data> for DataChannel {}
-
-pub enum ChannelSend {
-    LocationUpdate((f64, f64)),
-    LocationEnabledUpdate(bool),
+    launch(build_launch_config());
 }

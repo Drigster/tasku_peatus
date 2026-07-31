@@ -1,6 +1,6 @@
 use freya::{prelude::*, radio::use_radio};
 
-use crate::{DataChannel, components::StopComponent};
+use crate::{components::StopComponent, launch_config::DataChannel};
 
 #[derive(PartialEq)]
 pub struct Timetable {}

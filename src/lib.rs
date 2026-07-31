@@ -1,40 +1,19 @@
 #[cfg(target_os = "android")]
-use chrono::{DateTime, Utc};
-#[cfg(target_os = "android")]
-use freya::{
-    prelude::*,
-    radio::{RadioChannel, RadioStation},
-};
-#[cfg(target_os = "android")]
-use smol::stream::StreamExt;
-#[cfg(target_os = "android")]
-use std::collections::HashMap;
-#[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 
-#[cfg(target_os = "android")]
 mod app;
-#[cfg(target_os = "android")]
 mod components;
-#[cfg(target_os = "android")]
+mod launch_config;
 mod layouts;
-#[cfg(target_os = "android")]
 mod pages;
-#[cfg(target_os = "android")]
 mod utils;
-#[cfg(target_os = "android")]
-use app::MyApp;
-
-#[cfg(target_os = "android")]
-use crate::utils::{departures_parser::Departures, stops_parser::Stop};
-
-#[cfg(target_os = "android")]
-pub static APP_DIR_NAME: &str = "TaskuPeatus";
 
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 fn android_main(droid_app: AndroidApp) {
+    use crate::launch_config::build_launch_config;
     use freya::android::AndroidPlugin;
+    use freya::prelude::launch;
     use freya_winit::renderer::NativeEvent;
     use winit::{event_loop::EventLoop, platform::android::EventLoopBuilderExtAndroid};
 
@@ -47,81 +26,11 @@ fn android_main(droid_app: AndroidApp) {
         .build()
         .expect("Failed to build event loop");
 
-    let mut radio_station = RadioStation::create_global(Data::default());
+    let mut config = build_launch_config();
 
-    let (state_tx, mut state_rx) = futures_channel::mpsc::unbounded::<ChannelSend>();
+    config = config
+        .with_event_loop(event_loop)
+        .with_plugin(AndroidPlugin::new(droid_app));
 
-    radio_station.write_channel(DataChannel::NoUpdate).state_tx = Some(state_tx.clone());
-
-    launch(
-        LaunchConfig::new()
-            .with_plugin(AndroidPlugin::new(droid_app))
-            .with_future(move |_| async move {
-                while let Some(channel_data) = state_rx.next().await {
-                    match channel_data {
-                        ChannelSend::LocationUpdate(location) => {
-                            radio_station
-                                .write_channel(DataChannel::LocationUpdate)
-                                .location = Some(location);
-                        }
-                        ChannelSend::LocationEnabledUpdate(enabled) => {
-                            radio_station
-                                .write_channel(DataChannel::LocationEnabledUpdate)
-                                .is_location_enabled = enabled;
-                        }
-                    }
-                }
-            })
-            .with_event_loop(event_loop),
-    )
-}
-
-#[cfg(target_os = "android")]
-#[derive(Debug, Clone)]
-pub enum ErrorState {
-    NoPermissions,
-    LocationWatcherError(String),
-    NoLocation(String),
-    StopsUpdateError(String),
-}
-
-#[cfg(target_os = "android")]
-#[derive(Default, Clone)]
-pub struct Data {
-    stops: Vec<Stop>,
-    stops_radius: Vec<String>,
-    stops_distances: HashMap<String, u64>,
-    departures: Departures,
-    departures_next_update: DateTime<Utc>,
-
-    location: Option<(f64, f64)>,
-
-    is_location_enabled: bool,
-    error_state: Option<ErrorState>,
-
-    state_tx: Option<futures_channel::mpsc::UnboundedSender<ChannelSend>>,
-}
-
-#[cfg(target_os = "android")]
-#[derive(PartialEq, Eq, Clone, Debug, Hash)]
-pub enum DataChannel {
-    NoUpdate,
-    StopsUpdate,
-    StopsRadiusUpdate,
-    StopsDistancesUpdate(String),
-    DeparturesUpdate,
-    DepartureUpdate(String),
-    LocationUpdate,
-    LocationEnabledUpdate,
-    ErrorStateUpdate,
-    RoutesUpdate,
-}
-
-#[cfg(target_os = "android")]
-impl RadioChannel<Data> for DataChannel {}
-
-#[cfg(target_os = "android")]
-pub enum ChannelSend {
-    LocationUpdate((f64, f64)),
-    LocationEnabledUpdate(bool),
+    launch(config);
 }

@@ -2,8 +2,9 @@ use chrono::{DateTime, Utc};
 use revision::{from_slice, revisioned, to_vec};
 use std::{collections::HashMap, fs, path::PathBuf};
 
-use crate::utils::{
-    departures_parser::RouteType, preferences::get_cache_dir, text_utils::parse_csv_line,
+use crate::{
+    launch_config::APP_DIR_NAME,
+    utils::{departures_parser::RouteType, preferences::get_cache_dir, text_utils::parse_csv_line},
 };
 
 static ROUTES_URL: &str = "https://transport.tallinn.ee/data/routes.txt";
@@ -203,7 +204,7 @@ pub fn get_last_modified_version() -> DateTime<Utc> {
 }
 
 pub fn get_routes_file_path() -> PathBuf {
-    let cache_dir = get_cache_dir().unwrap().join("tasku_peatus");
+    let cache_dir = get_cache_dir().unwrap().join(APP_DIR_NAME);
     if !cache_dir.exists() {
         std::fs::create_dir_all(&cache_dir).unwrap();
     }
