@@ -115,7 +115,7 @@ pub fn use_location() {
             #[cfg(all(not(feature = "geoclue"), not(target_os = "android")))]
             {
                 *is_location_enabled.write() = true;
-                // *location.write() = Some((59.436552, 24.753048));
+                *location.write() = Some((59.436552, 24.753048));
             }
         });
         *is_loading.write() = false;
