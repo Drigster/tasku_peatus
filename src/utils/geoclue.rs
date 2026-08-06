@@ -1,20 +1,11 @@
 use smol::stream::StreamExt;
 use zbus::{Connection, proxy, zvariant};
 
-const MASTER_SERVICE: &str = "org.freedesktop.GeoClue.Master";
+const MASTER_SERVICE: &str = "org.freedesktop.Geoclue.Master";
 
 #[proxy(
-    interface = "org.freedesktop.Geoclue.Master",
-    default_service = "org.freedesktop.Geoclue.Master",
-    default_path = "/org/freedesktop/Geoclue/Master"
-)]
-trait Master {
-    fn create(&self) -> Result<zbus::zvariant::OwnedObjectPath>;
-}
-
-#[proxy(
-    interface = "org.freedesktop.GeoClue.MasterClient",
-    default_service = "org.freedesktop.GeoClue.Master"
+    interface = "org.freedesktop.Geoclue.MasterClient",
+    default_service = "org.freedesktop.Geoclue.Master"
 )]
 trait MasterClient {
     fn set_requirements(
@@ -25,22 +16,11 @@ trait MasterClient {
         allowed_resources: i32, // 1023 = all
     ) -> zbus::Result<()>;
     fn position_start(&self) -> zbus::Result<()>;
-
-    fn get_position_provider(&self) -> zbus::Result<(String, String, String, String)>;
-
-    #[zbus(signal)]
-    fn position_provider_changed(
-        &self,
-        name: String,
-        description: String,
-        service: String,
-        path: String,
-    ) -> zbus::Result<()>;
 }
 
 #[proxy(
-    interface = "org.freedesktop.GeoClue.Position",
-    default_service = "org.freedesktop.GeoClue.Master"
+    interface = "org.freedesktop.Geoclue.Position",
+    default_service = "org.freedesktop.Geoclue.Master"
 )]
 trait Position {
     fn get_position(
@@ -66,98 +46,82 @@ trait Position {
     ) -> zbus::Result<()>;
 }
 
-#[derive(Debug, Clone)]
-pub enum LocationEvent {
-    Enabled,
-    Disabled,
-    Position {
-        latitude: f64,
-        longitude: f64,
-        altitude: f64,
-        horizontal_accuracy: f64,
-    },
+pub async fn get_location() -> Result<(f64, f64), Box<dyn std::error::Error>> {
+    println!("Get location");
+    // Session bus, run as defaultuser
+    let conn = Connection::session().await?;
+    println!("Connection: {:?}", conn);
+
+    // Activate the master (this creates/keeps client0 alive)
+    let client_body = conn
+        .call_method(
+            Some(MASTER_SERVICE),
+            "/org/freedesktop/Geoclue/Master",
+            Some("org.freedesktop.Geoclue.Master"),
+            "Create",
+            &(),
+        )
+        .await?
+        .body();
+
+    let client_path: zvariant::OwnedObjectPath = client_body.deserialize()?;
+
+    let client = MasterClientProxy::new(&conn, client_path.clone()).await?;
+    println!("Client: {:?}", client);
+    let requirments = client.set_requirements(6, 0, true, 1023).await;
+
+    println!("Requirements: {requirments:?}");
+
+    let pos_start = client.position_start().await;
+
+    println!("Position start: {pos_start:?}");
+
+    let pos = PositionProxy::new(&conn, client_path).await?;
+    let position = pos.get_position().await?;
+
+    println!("Position: {:?}", position);
+
+    Ok((0.0, 0.0))
 }
 
-pub async fn start_location_watcher<F>(mut on_event: F) -> Result<()>
+pub async fn start_location_updates<F>(callback: F) -> Result<(), Box<dyn std::error::Error>>
 where
-    F: FnMut(LocationEvent),
+    F: Fn((f64, f64, f32)) + Send + Sync + 'static,
 {
+    // Session bus, run as defaultuser
     let conn = Connection::session().await?;
 
-    let master = MasterProxy::new(&conn).await?;
-    let client_path = master.create().await?;
+    // Activate the master (this creates/keeps client0 alive)
+    let client_body = conn
+        .call_method(
+            Some(MASTER_SERVICE),
+            "/org/freedesktop/Geoclue/Master",
+            Some("org.freedesktop.Geoclue.Master"),
+            "Create",
+            &(),
+        )
+        .await?
+        .body();
 
-    let client = MasterClientProxy::builder(&conn)
-        .path(client_path.clone())?
-        .build()
-        .await?;
+    let client_path: zvariant::OwnedObjectPath = client_body.deserialize()?;
 
-    client.set_requirements(4, 0, true, 1023).await?;
+    let client = MasterClientProxy::new(&conn, client_path.clone()).await?;
+    println!("Client: {:?}", client);
 
-    // Initial on/off state
-    let mut enabled = match client.get_position_provider().await {
-        Ok((_, _, service, _)) => !service.is_empty(),
-        Err(_) => false,
-    };
-    on_event(if enabled {
-        LocationEvent::Enabled
-    } else {
-        LocationEvent::Disabled
-    });
+    let requirments = client.set_requirements(6, 2, true, 1023).await;
+    println!("Requirements: {requirments:?}");
 
-    // Position signals arrive on the same client object
-    let position = PositionProxy::builder(&conn)
-        .path(client_path)?
-        .build()
-        .await?;
+    let pos = PositionProxy::new(&conn, client_path).await?;
 
-    let provider_stream = client
-        .receive_position_provider_changed()
-        .await
-        .into_iter()
-        .filter_map(|s| async move { s.args().ok().map(|a| (!a.service.is_empty()).into()) });
+    let pos_start = client.position_start().await;
+    println!("Position start: {pos_start:?}");
 
-    let position_stream = position
-        .receive_position_changed()
-        .await
-        .into_iter()
-        .filter_map(|s| async move {
-            let a = s.args().ok()?;
-            let fields = *a.fields;
-            // bits 1 (latitude) and 2 (longitude) must be set for a valid fix
-            if fields & 0b011 != 0 {
-                Some(LocationEvent::Position {
-                    latitude: *a.latitude,
-                    longitude: *a.longitude,
-                    altitude: *a.altitude,
-                    horizontal_accuracy: a.accuracy.1,
-                })
-            } else {
-                None
-            }
-        });
-
-    let mut events = futures_util::stream::select(provider_stream, position_stream);
-
-    while let Some(event) = events.next().await {
-        match event {
-            LocationEvent::Enabled => {
-                if !enabled {
-                    enabled = true;
-                    on_event(LocationEvent::Enabled);
-                }
-            }
-            LocationEvent::Disabled => {
-                if enabled {
-                    enabled = false;
-                    on_event(LocationEvent::Disabled);
-                }
-            }
-            pos @ LocationEvent::Position { .. } => {
-                on_event(pos);
-            }
+    let mut updates = pos.receive_position_changed().await?;
+    while let Some(signal) = updates.next().await {
+        let args = signal.args()?;
+        if args.fields & 0b011 == 0b011 {
+            callback((args.latitude, args.longitude, args.accuracy.1 as f32));
         }
     }
-
     Ok(())
 }
