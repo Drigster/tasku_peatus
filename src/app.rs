@@ -1,6 +1,6 @@
 use freya::{
     prelude::*,
-    radio::{RadioStation, use_share_radio},
+    radio::{RadioStation, use_radio, use_share_radio},
     router::{Routable, RouterConfig},
 };
 use freya_router::prelude::Router;
@@ -33,9 +33,10 @@ impl App for MyApp {
 
         use_init_theme(|| custom_theme());
 
-        use_stops();
-        use_location();
-        use_departures();
+        let radio = use_radio(DataChannel::NoUpdate);
+        use_stops(&radio);
+        use_location(&radio);
+        use_departures(&radio);
 
         Router::<Route>::new(|| RouterConfig::default().with_initial_path(Route::Timetable))
     }

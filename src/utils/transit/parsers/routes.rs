@@ -1,22 +1,201 @@
 use chrono::{DateTime, Utc};
+use freya::prelude::{Bytes, Color};
 use revision::{from_slice, revisioned, to_vec};
 use std::{collections::HashMap, fs, path::PathBuf};
 
 use crate::{
     launch_config::APP_DIR_NAME,
-    utils::{departures_parser::RouteType, preferences::get_cache_dir, text_utils::parse_csv_line},
+    utils::{preferences::get_cache_dir, text_utils::parse_csv_line},
 };
 
 static ROUTES_URL: &str = "https://transport.tallinn.ee/data/routes.txt";
+
+#[derive(Debug)]
+#[allow(dead_code)]
+struct RawRoute {
+    route_num: String,
+    authority: String,
+    city: String,
+    transport: String,
+    operator: String,
+    validity_periods: Vec<u64>,
+    special_dates: Vec<u64>,
+    route_tag: String,
+    route_type: String,
+    commercial: String,
+    route_name: String,
+    weekdays: String,
+    streets: String,
+    route_stops: Vec<String>,
+    route_stops_platforms: String,
+    times: Option<ExplodedTimes>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+struct ExplodedTimes {
+    weekdays: Vec<String>,
+    valid_from: Vec<i32>,
+    valid_to: Vec<i32>,
+    low_ground: Vec<bool>,
+    times: Vec<Vec<i32>>,
+}
+
+#[revisioned(revision = 2)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum RouteType {
+    Metro(String),
+    Bus(String),
+    NightBus(String),
+    Trol(String),
+    Tram(String),
+    RegionalBus(String),
+    SuburbanBus(String),
+    CommercialBus(String),
+    IntercityBus(String),
+    InternationalBus(String),
+    SeasonalBus(String),
+    ExpressBus(String),
+    MiniBus(String),
+    Train(String),
+    Plane(String),
+    Festival(String),
+    EventBus(String),
+    Ferry(String),
+    Aquabus(String),
+    Unknown(String),
+}
+
+impl From<(String, String)> for RouteType {
+    fn from(s: (String, String)) -> Self {
+        match s.0.as_str() {
+            "metro" => RouteType::Metro(s.1),
+            "bus" => RouteType::Bus(s.1),
+            "nightbus" => RouteType::NightBus(s.1),
+            "trol" => RouteType::Trol(s.1),
+            "tram" => RouteType::Tram(s.1),
+            "regionalbus" => RouteType::RegionalBus(s.1),
+            "suburbanbus" => RouteType::SuburbanBus(s.1),
+            "commercialbus" => RouteType::CommercialBus(s.1),
+            "intercitybus" => RouteType::IntercityBus(s.1),
+            "internationalbus" => RouteType::InternationalBus(s.1),
+            "seasonalbus" => RouteType::SeasonalBus(s.1),
+            "expressbus" => RouteType::ExpressBus(s.1),
+            "minibus" => RouteType::MiniBus(s.1),
+            "train" => RouteType::Train(s.1),
+            "plane" => RouteType::Plane(s.1),
+            "festival" => RouteType::Festival(s.1),
+            "eventbus" => RouteType::EventBus(s.1),
+            "ferry" => RouteType::Ferry(s.1),
+            "aquabus" => RouteType::Aquabus(s.1),
+            _ => RouteType::Unknown(s.1),
+        }
+    }
+}
+
+impl RouteType {
+    pub fn get_route(&self) -> String {
+        return match self {
+            RouteType::Metro(route) => route.clone(),
+            RouteType::Bus(route) => route.clone(),
+            RouteType::NightBus(route) => route.clone(),
+            RouteType::Trol(route) => route.clone(),
+            RouteType::Tram(route) => route.clone(),
+            RouteType::RegionalBus(route) => route.clone(),
+            RouteType::SuburbanBus(route) => route.clone(),
+            RouteType::CommercialBus(route) => route.clone(),
+            RouteType::IntercityBus(route) => route.clone(),
+            RouteType::InternationalBus(route) => route.clone(),
+            RouteType::SeasonalBus(route) => route.clone(),
+            RouteType::ExpressBus(route) => route.clone(),
+            RouteType::MiniBus(route) => route.clone(),
+            RouteType::Train(route) => route.clone(),
+            RouteType::Plane(route) => route.clone(),
+            RouteType::Festival(route) => route.clone(),
+            RouteType::EventBus(route) => route.clone(),
+            RouteType::Ferry(route) => route.clone(),
+            RouteType::Aquabus(route) => route.clone(),
+            RouteType::Unknown(route) => route.clone(),
+        };
+    }
+    pub fn get_transport_icon_and_color(&self) -> (Bytes, Color) {
+        match self {
+            // Copied from https://transport.tallinn.ee CSS
+            RouteType::Metro(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/subway-variant.svg")),
+                Color::from_hex("0xff6A00").unwrap(),
+            ),
+            RouteType::Bus(..) | RouteType::NightBus(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/bus.svg")),
+                Color::from_hex("0x00e1b4").unwrap(),
+            ),
+            RouteType::Trol(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/bus.svg")),
+                Color::from_hex("0x0064d7").unwrap(),
+            ),
+            RouteType::Tram(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/tram.svg")),
+                Color::from_hex("0xff601e").unwrap(),
+            ),
+            RouteType::RegionalBus(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/bus.svg")),
+                Color::from_hex("0x9c1630").unwrap(),
+            ),
+            RouteType::SuburbanBus(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/bus.svg")),
+                Color::from_hex("0x004a7f").unwrap(),
+            ),
+            RouteType::CommercialBus(..)
+            | RouteType::IntercityBus(..)
+            | RouteType::InternationalBus(..)
+            | RouteType::SeasonalBus(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/bus.svg")),
+                Color::from_hex("0x800080").unwrap(),
+            ),
+            RouteType::ExpressBus(..) | RouteType::MiniBus(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/bus.svg")),
+                Color::from_hex("0x008000").unwrap(),
+            ),
+            RouteType::Train(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/train.svg")),
+                Color::from_hex("0x009900").unwrap(),
+            ),
+            RouteType::Plane(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/airplane.svg")),
+                Color::from_hex("0x404040").unwrap(),
+            ),
+            RouteType::Festival(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/bus.svg")),
+                Color::from_hex("0xffa500").unwrap(),
+            ),
+            RouteType::EventBus(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/bus.svg")),
+                Color::from_hex("0xff6a00").unwrap(),
+            ),
+            RouteType::Ferry(..) | RouteType::Aquabus(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/ferry.svg")),
+                Color::from_hex("0x0064d7").unwrap(),
+            ),
+            RouteType::Unknown(..) => (
+                Bytes::from_static(include_bytes!("../../../assets/MDI/help.svg")),
+                Color::from_hex("0x000000").unwrap(),
+            ),
+        }
+    }
+}
+
 //                        StopId
-pub type Routes = HashMap<String, Vec<StopRoute>>;
+pub type Routes = HashMap<String, Vec<Route>>;
 
 #[revisioned(revision = 1)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct StopRoute {
+pub struct Route {
     pub route_type: RouteType,
     pub weekdays_times: HashMap<u8, Vec<i32>>,
     pub route_name: String,
+    pub route_key: String,
+    pub destination_key: String,
+    pub destination_name: String,
+    pub is_night: bool,
 }
 
 pub async fn get_routes() -> Result<Routes, Box<dyn std::error::Error>> {
@@ -61,7 +240,7 @@ pub async fn get_routes() -> Result<Routes, Box<dyn std::error::Error>> {
     Ok(routes)
 }
 
-fn parse_routes(data: String) -> Vec<Route> {
+fn parse_routes(data: String) -> Vec<RawRoute> {
     let mut lines = data.lines();
 
     let header: Vec<&str> = lines
@@ -93,7 +272,7 @@ fn parse_routes(data: String) -> Vec<Route> {
     let header_len = header.len();
     let mut previous_parts = vec![String::new(); header_len];
 
-    let mut routes: Vec<Route> = Vec::new();
+    let mut routes: Vec<RawRoute> = Vec::new();
     for (i, line) in lines.enumerate() {
         if i == 0 {
             continue;
@@ -162,7 +341,7 @@ fn parse_routes(data: String) -> Vec<Route> {
             .collect();
         let route_stops_platforms = parts[route_stops_platforms_index].clone();
 
-        let route = Route {
+        let route = RawRoute {
             route_num,
             authority,
             city,
@@ -211,7 +390,7 @@ pub fn get_routes_file_path() -> PathBuf {
     cache_dir.join("routes.dat")
 }
 
-fn convert_route(routes: Vec<Route>) -> Routes {
+fn convert_route(routes: Vec<RawRoute>) -> Routes {
     let mut converted_routes: Routes = HashMap::new();
 
     for route in routes {
@@ -239,32 +418,70 @@ fn convert_route(routes: Vec<Route>) -> Routes {
             };
 
             if let Some(stop_routes) = converted_routes.get_mut(route_stop) {
-                // if let Some(stop_route) =
-                //     stop_routes.get_mut(&(route.transport.clone(), route.route_num.clone()))
-                // {
-                //     for (key, values) in weekdays_times {
-                //         stop_route
-                //             .entry(key)
-                //             .and_modify(|v| v.append(&mut values.clone()))
-                //             .or_insert(values);
-                //     }
-                // } else {
-                //     stop_routes.insert(
-                //         (route.transport.clone(), route.route_num.clone()),
-                //         weekdays_times,
-                //     );
-                // }
-                let route = StopRoute {
-                    route_type: RouteType::from((route.transport.clone(), route.route_num.clone())),
-                    weekdays_times,
-                    route_name: route.route_name.clone(),
-                };
-                stop_routes.push(route);
+                let destination_key = route
+                    .route_type
+                    .split("-")
+                    .last()
+                    .unwrap_or(&route.route_type)
+                    .to_string();
+
+                if let Some(existing_route) = stop_routes.iter_mut().find(|e| {
+                    e.destination_key == destination_key
+                        && e.route_type
+                            == RouteType::from((route.transport.clone(), route.route_num.clone()))
+                }) {
+                    existing_route
+                        .weekdays_times
+                        .iter_mut()
+                        .for_each(|(key, times)| {
+                            let weekday_times = weekdays_times.get(key);
+                            if let Some(weekday_times) = weekday_times {
+                                if route_stop == "12104-1" {
+                                    println!("{:?} {:?} {:?}", times, route_stop, route);
+                                }
+                                times.append(&mut weekday_times.clone());
+                                times.sort();
+                            }
+                        });
+                } else {
+                    let route = Route {
+                        route_type: RouteType::from((
+                            route.transport.clone(),
+                            route.route_num.clone(),
+                        )),
+                        weekdays_times,
+                        destination_name: route
+                            .route_name
+                            .split(" - ")
+                            .last()
+                            .unwrap_or(&route.route_name)
+                            .to_string(),
+                        destination_key,
+                        route_name: route.route_name.clone(),
+                        route_key: route.route_type.clone(),
+                        is_night: route.route_name.starts_with("ÖÖ"),
+                    };
+                    stop_routes.push(route);
+                }
             } else {
-                let route = StopRoute {
+                let route = Route {
                     route_type: RouteType::from((route.transport.clone(), route.route_num.clone())),
                     weekdays_times,
+                    destination_name: route
+                        .route_name
+                        .split(" - ")
+                        .last()
+                        .unwrap_or(&route.route_name)
+                        .to_string(),
+                    destination_key: route
+                        .route_type
+                        .split("-")
+                        .last()
+                        .unwrap_or(&route.route_type)
+                        .to_string(),
                     route_name: route.route_name.clone(),
+                    route_key: route.route_type.clone(),
+                    is_night: route.route_name.starts_with("ÖÖ"),
                 };
                 converted_routes.insert(route_stop.clone(), vec![route]);
             }
@@ -272,36 +489,6 @@ fn convert_route(routes: Vec<Route>) -> Routes {
     }
 
     converted_routes
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-struct Route {
-    route_num: String,
-    authority: String,
-    city: String,
-    transport: String,
-    operator: String,
-    validity_periods: Vec<u64>,
-    special_dates: Vec<u64>,
-    route_tag: String,
-    route_type: String,
-    commercial: String,
-    route_name: String,
-    weekdays: String,
-    streets: String,
-    route_stops: Vec<String>,
-    route_stops_platforms: String,
-    times: Option<ExplodedTimes>,
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
-struct ExplodedTimes {
-    weekdays: Vec<String>,
-    valid_from: Vec<i32>,
-    valid_to: Vec<i32>,
-    low_ground: Vec<bool>,
-    times: Vec<Vec<i32>>,
 }
 
 fn parse_i32_lossy(token: &str, malformed_tokens: &mut Vec<String>) -> i32 {

@@ -1,18 +1,18 @@
 use std::time::Duration;
 
 use chrono::TimeDelta;
-use freya::prelude::*;
+use freya::{icons::lucide, prelude::*};
 
-use crate::utils::{departures_parser::Departure, routes_parser::StopRoute};
+use crate::utils::transit::parsers::{departures::Departure, routes::Route};
 
 #[derive(Clone, PartialEq)]
 pub struct DepartureComponent {
     pub departure: Departure,
-    pub route: StopRoute,
+    pub route: Route,
 }
 
 impl DepartureComponent {
-    pub fn new(route: StopRoute, departure: Departure) -> Self {
+    pub fn new(route: Route, departure: Departure) -> Self {
         Self { route, departure }
     }
 }
@@ -137,6 +137,15 @@ impl Component for DepartureComponent {
                                                     .text(self.route.route_type.get_route()),
                                             ),
                                     )
+                                    .maybe_child(if self.route.is_night {
+                                        Some(
+                                            SvgViewer::new(lucide::moon())
+                                                .width(Size::px(20.0))
+                                                .height(Size::px(20.0)),
+                                        )
+                                    } else {
+                                        None
+                                    })
                                     .child(
                                         label()
                                             .font_size(20.0)

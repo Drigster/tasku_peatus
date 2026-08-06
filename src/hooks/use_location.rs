@@ -1,9 +1,11 @@
-use freya::{prelude::*, radio::use_radio};
+use freya::{
+    prelude::{Interactive::No, *},
+    radio::Radio,
+};
 
-use crate::launch_config::{AppState, DataChannel};
+use crate::launch_config::{AppState, Data, DataChannel};
 
-pub fn use_location() {
-    let radio = use_radio(DataChannel::NoUpdate);
+pub fn use_location(radio: &Radio<Data, DataChannel>) {
     let mut is_location_enabled = radio.slice_mut(DataChannel::LocationEnabledUpdate, |s| {
         &mut s.is_location_enabled
     });
@@ -22,6 +24,8 @@ pub fn use_location() {
                 *state.write() = Some(AppState::LocationDisabled);
             } else if location_clone.read().is_none() {
                 *state.write() = Some(AppState::WitingForLocation);
+            } else {
+                *state.write() = None;
             }
         }
     });
@@ -97,7 +101,6 @@ pub fn use_location() {
                 use crate::launch_config::ChannelSend;
                 use crate::utils::geoclue::start_location_updates;
 
-                *is_location_enabled.write() = true;
                 match start_location_updates(move |(lat, lng, accuracy)| {
                     println!("[Print] Location changed: lat={lat}, lng={lng}, accuracy={accuracy}");
                     let _ = state_tx.unbounded_send(ChannelSend::LocationUpdate((lat, lng)));
@@ -105,6 +108,7 @@ pub fn use_location() {
                 .await
                 {
                     Ok(callback_ptr) => {
+                        *is_location_enabled.write() = true;
                         println!("[Print] Location updates started: {callback_ptr:?}");
                     }
                     Err(e) => {

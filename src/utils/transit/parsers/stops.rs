@@ -7,14 +7,33 @@ use crate::{
     launch_config::APP_DIR_NAME,
     utils::{
         preferences::get_cache_dir,
-        routes_parser::{StopRoute, get_routes},
         text_utils::parse_csv_line,
+        transit::parsers::routes::{Route, get_routes},
     },
 };
 
 static STOPS_URL: &str = "https://transport.tallinn.ee/data/stops.txt";
 
-pub async fn get_stops() -> Result<Vec<Stop>, Box<dyn std::error::Error>> {
+#[revisioned(revision = 2)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Stop {
+    pub stop_id: String,
+    pub siri_id: String,
+    pub lat: f64,
+    pub lon: f64,
+    pub stops: Vec<String>,
+    pub name: String,
+    pub routes: Vec<Route>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StopRadius {
+    pub stop_id: String,
+    pub siri_id: String,
+    pub distance: u64,
+}
+
+pub async fn get_stops() -> Result<HashMap<String, Stop>, Box<dyn std::error::Error>> {
     let last_modified = DateTime::<Utc>::MAX_UTC;
     if get_stops_file_path().exists() && last_modified >= get_last_modified_version() {
         let stops = blocking::unblock(|| {
@@ -23,11 +42,11 @@ pub async fn get_stops() -> Result<Vec<Stop>, Box<dyn std::error::Error>> {
                 Err(err) => return Err(err.to_string()),
             };
 
-            let data: Vec<Stop> = match from_slice(&bytes) {
+            let data = match from_slice(&bytes) {
                 Ok(data) => data,
                 Err(err) => return Err(err.to_string()),
             };
-            Ok::<Vec<Stop>, String>(data)
+            Ok::<HashMap<String, Stop>, String>(data)
         })
         .await;
 
@@ -49,8 +68,8 @@ pub async fn get_stops() -> Result<Vec<Stop>, Box<dyn std::error::Error>> {
 
     let routes = get_routes().await.unwrap();
 
-    for stop in stops.iter_mut() {
-        if let Some(route) = routes.get(&stop.stop_id) {
+    for (stop_id, route) in routes {
+        if let Some(stop) = stops.get_mut(&stop_id) {
             stop.routes = route.clone();
         }
     }
@@ -66,16 +85,15 @@ pub async fn get_stops() -> Result<Vec<Stop>, Box<dyn std::error::Error>> {
 }
 
 pub fn get_stops_in_radius(
-    stops: Vec<Stop>,
+    stops: HashMap<String, Stop>,
     center_lat: f64,
     center_lon: f64,
     radius_meters: f64,
-) -> (Vec<String>, HashMap<String, u64>) {
-    let mut stops_distances: HashMap<String, u64> = HashMap::new();
-    let mut stops_radius: Vec<String> = Vec::new();
+) -> Vec<StopRadius> {
+    let mut stops_radius: Vec<StopRadius> = Vec::new();
 
-    for stop in stops.into_iter() {
-        if stop.siri_id.trim().is_empty() {
+    for (_, stop) in stops.into_iter() {
+        if stop.stop_id.trim().is_empty() {
             continue;
         };
         let lat_delta = meters_to_degrees_lat(radius_meters + 5.0);
@@ -93,17 +111,20 @@ pub fn get_stops_in_radius(
                 continue;
             }
 
-            stops_distances.insert(stop.siri_id.clone(), distance as u64);
-            stops_radius.push(stop.siri_id.clone());
+            stops_radius.push(StopRadius {
+                stop_id: stop.stop_id.clone(),
+                siri_id: stop.siri_id.clone(),
+                distance: distance as u64,
+            });
         }
     }
 
-    stops_radius.sort_by(|a, b| stops_distances[a].cmp(&stops_distances[b]));
+    stops_radius.sort_by(|a, b| a.distance.cmp(&b.distance));
 
-    (stops_radius, stops_distances)
+    stops_radius
 }
 
-pub fn parse_stops(data: String) -> Vec<Stop> {
+pub fn parse_stops(data: String) -> HashMap<String, Stop> {
     let mut lines = data.lines();
 
     let header: Vec<&str> = lines
@@ -122,7 +143,7 @@ pub fn parse_stops(data: String) -> Vec<Stop> {
     let header_len = header.len();
     let mut previous_parts = vec![String::new(); header_len];
 
-    let mut stops = Vec::new();
+    let mut stops = HashMap::new();
     for (i, line) in lines.enumerate() {
         if i == 0 {
             continue;
@@ -170,15 +191,18 @@ pub fn parse_stops(data: String) -> Vec<Stop> {
         };
         let name = parts[name_index].clone();
 
-        stops.push(Stop {
-            stop_id,
-            siri_id,
-            lat,
-            lon,
-            stops: vec![],
-            name,
-            routes: vec![],
-        });
+        stops.insert(
+            stop_id.clone(),
+            Stop {
+                stop_id,
+                siri_id,
+                lat,
+                lon,
+                stops: vec![],
+                name,
+                routes: vec![],
+            },
+        );
     }
 
     stops
@@ -206,18 +230,6 @@ pub fn get_stops_file_path() -> PathBuf {
         std::fs::create_dir_all(&cache_dir).unwrap();
     }
     cache_dir.join("stops.dat")
-}
-
-#[revisioned(revision = 2)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct Stop {
-    pub stop_id: String,
-    pub siri_id: String,
-    pub lat: f64,
-    pub lon: f64,
-    pub stops: Vec<String>,
-    pub name: String,
-    pub routes: Vec<StopRoute>,
 }
 
 fn meters_to_degrees_lat(meters: f64) -> f64 {

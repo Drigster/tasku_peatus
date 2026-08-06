@@ -1,14 +1,10 @@
-use chrono::{DateTime, Utc};
 use freya::{
     prelude::*,
     radio::{RadioChannel, RadioStation},
 };
 use smol::stream::StreamExt;
-use std::collections::HashMap;
 
-use crate::app::MyApp;
-
-use crate::utils::{departures_parser::Departures, stops_parser::Stop};
+use crate::{app::MyApp, utils::transit::TransitData};
 
 pub static APP_DIR_NAME: &str = "tasku_peatus";
 
@@ -55,11 +51,7 @@ pub enum AppState {
 
 #[derive(Default, Clone)]
 pub struct Data {
-    pub stops: Vec<Stop>,
-    pub stops_radius: Vec<String>,
-    pub stops_distances: HashMap<String, u64>,
-    pub departures: Departures,
-    pub departures_next_update: DateTime<Utc>,
+    pub transit_data: TransitData,
 
     pub is_location_enabled: bool,
     pub location: Option<(f64, f64)>,

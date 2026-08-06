@@ -9,30 +9,33 @@ use crate::{components::DepartureComponent, launch_config::DataChannel};
 
 #[derive(Clone, PartialEq)]
 pub struct StopComponent {
-    pub siri_id: String,
+    pub stop_id: String,
+    pub distance: u64,
 }
 
 impl StopComponent {
-    pub fn new(siri_id: String) -> Self {
-        Self { siri_id }
+    pub fn new(stop_id: String, distance: u64) -> Self {
+        Self { stop_id, distance }
     }
 }
 
 impl Component for StopComponent {
     fn render(&self) -> impl IntoElement {
         let theme = use_theme();
-        let siri_id = self.siri_id.clone();
+        let stop_id = self.stop_id.clone();
 
         let radio = use_radio(DataChannel::StopsUpdate);
-        let stops = &radio.read().stops;
-        let stop_data = stops.iter().find(|e| e.siri_id == siri_id).unwrap();
-        let stops_distances = radio
-            .slice(DataChannel::StopsDistancesUpdate(siri_id.clone()), |s| {
-                &s.stops_distances
-            });
-        let departures = radio.slice(DataChannel::DeparturesUpdate, |s| &s.departures);
+        let stops = &radio.read().transit_data.stops;
+        let stop_data = stops.get(&stop_id);
+        let departures = radio.slice(DataChannel::DeparturesUpdate, |s| {
+            &s.transit_data.departures
+        });
         let departures = departures.read();
 
+        if stop_data.is_none() {
+            return rect();
+        };
+        let stop_data = stop_data.unwrap();
         if stop_data.routes.is_empty() {
             return rect();
         };
@@ -117,12 +120,7 @@ impl Component for StopComponent {
                                                     .max_lines(1)
                                                     .text(format!(
                                                         "{} - {}m",
-                                                        stop_data.name,
-                                                        stops_distances
-                                                            .read()
-                                                            .get(&self.siri_id)
-                                                            .copied()
-                                                            .unwrap_or(0)
+                                                        stop_data.name, self.distance
                                                     )),
                                             ),
                                     ),
@@ -152,7 +150,7 @@ impl Component for StopComponent {
                     .overflow(Overflow::Clip)
                     .children(
                         if !stop_data.routes.is_empty()
-                            && let Some(departure) = departures.get(&siri_id)
+                            && let Some(departure) = departures.get(&stop_data.siri_id)
                         {
                             stop_data
                                 .routes
@@ -168,16 +166,13 @@ impl Component for StopComponent {
                                             .unwrap_or(&route.route_name)
                                             .to_string(),
                                     ));
-                                    if dep.is_none() || route.route_name.contains("depoo") {
-                                        return None;
+                                    match dep {
+                                        Some(dep) => Some(
+                                            DepartureComponent::new(route.clone(), dep.clone())
+                                                .into_element(),
+                                        ),
+                                        None => None,
                                     }
-                                    Some(
-                                        DepartureComponent::new(
-                                            route.clone(),
-                                            dep.unwrap().clone(),
-                                        )
-                                        .into_element(),
-                                    )
                                 })
                                 .collect()
                         } else {

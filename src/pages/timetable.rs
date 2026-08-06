@@ -10,7 +10,7 @@ pub struct Timetable {}
 impl Component for Timetable {
     fn render(&self) -> impl IntoElement {
         let radio = use_radio(DataChannel::StopsRadiusUpdate);
-        let stops_radius = radio.read().stops_radius.clone();
+        let stops_radius = radio.read().transit_data.stops_radius.clone();
         let state = radio.read().state.clone();
 
         rect()
@@ -46,13 +46,11 @@ impl Component for Timetable {
                 ScrollView::new()
                     .width(Size::Fill)
                     .height(Size::Fill)
-                    .child(
-                        rect().padding((4.0, 0.0, 0.0, 0.0)).children(
-                            stops_radius
-                                .into_iter()
-                                .map(|siri_id| StopComponent::new(siri_id)),
-                        ),
-                    )
+                    .child(rect().padding((4.0, 0.0, 0.0, 0.0)).children(
+                        stops_radius.into_iter().map(|stop_radius| {
+                            StopComponent::new(stop_radius.stop_id, stop_radius.distance)
+                        }),
+                    ))
                     .into_element()
             })
         // .child(match state {
