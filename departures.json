@@ -1,0 +1,666 @@
+{
+    "1294": {
+        "T1": [
+            {
+                "expected_time": 68508,
+                "scheduled_time": 68376,
+                "destination_name": "Kadriorg",
+                "until": 158,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 69166,
+                "scheduled_time": 69156,
+                "destination_name": "Kadriorg",
+                "until": 816,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 69936,
+                "scheduled_time": 69936,
+                "destination_name": "Kadriorg",
+                "until": 1586,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 70776,
+                "scheduled_time": 70776,
+                "destination_name": "Kadriorg",
+                "until": 2426,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71676,
+                "scheduled_time": 71676,
+                "destination_name": "Kadriorg",
+                "until": 3326,
+                "extra_data": ""
+            }
+        ],
+        "T6": [
+            {
+                "expected_time": 68710,
+                "scheduled_time": 68196,
+                "destination_name": "Pärnu mnt depoo",
+                "until": 360,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 68730,
+                "scheduled_time": 68616,
+                "destination_name": "Suur-Paala",
+                "until": 380,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69398,
+                "scheduled_time": 69396,
+                "destination_name": "Suur-Paala",
+                "until": 1048,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 70236,
+                "scheduled_time": 70236,
+                "destination_name": "Suur-Paala",
+                "until": 1886,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71076,
+                "scheduled_time": 71076,
+                "destination_name": "Suur-Paala",
+                "until": 2726,
+                "extra_data": "Z"
+            }
+        ],
+        "T5": [
+            {
+                "expected_time": 69624,
+                "scheduled_time": 69768,
+                "destination_name": "Vana-Lõuna",
+                "until": 1274,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 71508,
+                "scheduled_time": 71508,
+                "destination_name": "Vana-Lõuna",
+                "until": 3158,
+                "extra_data": ""
+            }
+        ]
+    },
+    "1634": {
+        "5": [
+            {
+                "expected_time": 68394,
+                "scheduled_time": 68328,
+                "destination_name": "Metsakooli tee",
+                "until": 44,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69218,
+                "scheduled_time": 69228,
+                "destination_name": "Metsakooli tee",
+                "until": 868,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70128,
+                "scheduled_time": 70128,
+                "destination_name": "Metsakooli tee",
+                "until": 1778,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71022,
+                "scheduled_time": 71022,
+                "destination_name": "Metsakooli tee",
+                "until": 2672,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71892,
+                "scheduled_time": 71892,
+                "destination_name": "Metsakooli tee",
+                "until": 3542,
+                "extra_data": "Z"
+            }
+        ],
+        "36": [
+            {
+                "expected_time": 68470,
+                "scheduled_time": 68460,
+                "destination_name": "Väike-Õismäe",
+                "until": 120,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69310,
+                "scheduled_time": 69300,
+                "destination_name": "Väike-Õismäe",
+                "until": 960,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70090,
+                "scheduled_time": 70080,
+                "destination_name": "Väike-Õismäe",
+                "until": 1740,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71110,
+                "scheduled_time": 71100,
+                "destination_name": "Väike-Õismäe",
+                "until": 2760,
+                "extra_data": "Z"
+            }
+        ],
+        "73": [
+            {
+                "expected_time": 68746,
+                "scheduled_time": 68382,
+                "destination_name": "Kopli liinid",
+                "until": 396,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69354,
+                "scheduled_time": 69354,
+                "destination_name": "Kopli liinid",
+                "until": 1004,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70494,
+                "scheduled_time": 70494,
+                "destination_name": "Kopli liinid",
+                "until": 2144,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71634,
+                "scheduled_time": 71634,
+                "destination_name": "Kopli liinid",
+                "until": 3284,
+                "extra_data": "Z"
+            }
+        ],
+        "1": [
+            {
+                "expected_time": 68824,
+                "scheduled_time": 68754,
+                "destination_name": "Viimsi",
+                "until": 474,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69928,
+                "scheduled_time": 69828,
+                "destination_name": "Viimsi",
+                "until": 1578,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70884,
+                "scheduled_time": 70884,
+                "destination_name": "Viimsi",
+                "until": 2534,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 71880,
+                "scheduled_time": 71880,
+                "destination_name": "Viimsi",
+                "until": 3530,
+                "extra_data": "Z"
+            }
+        ]
+    },
+    "1291": {
+        "73": [
+            {
+                "expected_time": 69073,
+                "scheduled_time": 69063,
+                "destination_name": "Vana-Lõuna",
+                "until": 723,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69903,
+                "scheduled_time": 69903,
+                "destination_name": "Vana-Lõuna",
+                "until": 1553,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70803,
+                "scheduled_time": 70803,
+                "destination_name": "Vana-Lõuna",
+                "until": 2453,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71823,
+                "scheduled_time": 71823,
+                "destination_name": "Vana-Lõuna",
+                "until": 3473,
+                "extra_data": "Z"
+            }
+        ],
+        "21": [
+            {
+                "expected_time": 69394,
+                "scheduled_time": 69394,
+                "destination_name": "Landi",
+                "until": 1044,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 70888,
+                "scheduled_time": 70888,
+                "destination_name": "Landi",
+                "until": 2538,
+                "extra_data": "Z"
+            }
+        ],
+        "41": [
+            {
+                "expected_time": 68835,
+                "scheduled_time": 68807,
+                "destination_name": "Kakumäe",
+                "until": 485,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 70427,
+                "scheduled_time": 70427,
+                "destination_name": "Kakumäe",
+                "until": 2077,
+                "extra_data": "Z"
+            }
+        ]
+    },
+    "1290": {
+        "35": [
+            {
+                "expected_time": 68666,
+                "scheduled_time": 68380,
+                "destination_name": "Pelguranna",
+                "until": 316,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69448,
+                "scheduled_time": 69400,
+                "destination_name": "Pelguranna",
+                "until": 1098,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70330,
+                "scheduled_time": 70330,
+                "destination_name": "Pelguranna",
+                "until": 1980,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71350,
+                "scheduled_time": 71350,
+                "destination_name": "Pelguranna",
+                "until": 3000,
+                "extra_data": "Z"
+            }
+        ],
+        "20": [
+            {
+                "expected_time": 68800,
+                "scheduled_time": 68800,
+                "destination_name": "Teelise",
+                "until": 450,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70528,
+                "scheduled_time": 70528,
+                "destination_name": "Teelise",
+                "until": 2178,
+                "extra_data": "Z"
+            }
+        ],
+        "18": [
+            {
+                "expected_time": 69262,
+                "scheduled_time": 69262,
+                "destination_name": "Urda",
+                "until": 912,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70582,
+                "scheduled_time": 70582,
+                "destination_name": "Urda",
+                "until": 2232,
+                "extra_data": "Z"
+            }
+        ],
+        "36": [
+            {
+                "expected_time": 68583,
+                "scheduled_time": 68583,
+                "destination_name": "Väike-Õismäe",
+                "until": 233,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69423,
+                "scheduled_time": 69423,
+                "destination_name": "Väike-Õismäe",
+                "until": 1073,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70203,
+                "scheduled_time": 70203,
+                "destination_name": "Väike-Õismäe",
+                "until": 1853,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71223,
+                "scheduled_time": 71223,
+                "destination_name": "Väike-Õismäe",
+                "until": 2873,
+                "extra_data": "Z"
+            }
+        ],
+        "5": [
+            {
+                "expected_time": 68594,
+                "scheduled_time": 68584,
+                "destination_name": "Männiku",
+                "until": 244,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69584,
+                "scheduled_time": 69364,
+                "destination_name": "Männiku",
+                "until": 1234,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70126,
+                "scheduled_time": 70126,
+                "destination_name": "Männiku",
+                "until": 1776,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70872,
+                "scheduled_time": 70872,
+                "destination_name": "Männiku",
+                "until": 2522,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71652,
+                "scheduled_time": 71652,
+                "destination_name": "Männiku",
+                "until": 3302,
+                "extra_data": "Z"
+            }
+        ],
+        "1": [
+            {
+                "expected_time": 68646,
+                "scheduled_time": 68578,
+                "destination_name": "Vana-Pääsküla",
+                "until": 296,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69589,
+                "scheduled_time": 69579,
+                "destination_name": "Vana-Pääsküla",
+                "until": 1239,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70599,
+                "scheduled_time": 70599,
+                "destination_name": "Vana-Pääsküla",
+                "until": 2249,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71643,
+                "scheduled_time": 71643,
+                "destination_name": "Vana-Pääsküla",
+                "until": 3293,
+                "extra_data": "Z"
+            }
+        ]
+    },
+    "1635": {
+        "T5": [
+            {
+                "expected_time": 69320,
+                "scheduled_time": 69320,
+                "destination_name": "Kopli",
+                "until": 970,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71360,
+                "scheduled_time": 71360,
+                "destination_name": "Kopli",
+                "until": 3010,
+                "extra_data": ""
+            }
+        ],
+        "T4": [
+            {
+                "expected_time": 68456,
+                "scheduled_time": 68390,
+                "destination_name": "Lennujaam",
+                "until": 106,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 69170,
+                "scheduled_time": 69170,
+                "destination_name": "Lennujaam",
+                "until": 820,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70010,
+                "scheduled_time": 70010,
+                "destination_name": "Lennujaam",
+                "until": 1660,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70850,
+                "scheduled_time": 70850,
+                "destination_name": "Lennujaam",
+                "until": 2500,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 71750,
+                "scheduled_time": 71750,
+                "destination_name": "Lennujaam",
+                "until": 3400,
+                "extra_data": "Z"
+            }
+        ],
+        "T3": [
+            {
+                "expected_time": 68796,
+                "scheduled_time": 68804,
+                "destination_name": "Kadriorg",
+                "until": 446,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69584,
+                "scheduled_time": 69584,
+                "destination_name": "Kadriorg",
+                "until": 1234,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 70424,
+                "scheduled_time": 70424,
+                "destination_name": "Kadriorg",
+                "until": 2074,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 71264,
+                "scheduled_time": 71264,
+                "destination_name": "Kadriorg",
+                "until": 2914,
+                "extra_data": ""
+            }
+        ]
+    },
+    "1304": {
+        "T6": [
+            {
+                "expected_time": 68954,
+                "scheduled_time": 68964,
+                "destination_name": "Kopli",
+                "until": 604,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69744,
+                "scheduled_time": 69744,
+                "destination_name": "Kopli",
+                "until": 1394,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70584,
+                "scheduled_time": 70584,
+                "destination_name": "Kopli",
+                "until": 2234,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71424,
+                "scheduled_time": 71424,
+                "destination_name": "Kopli",
+                "until": 3074,
+                "extra_data": ""
+            }
+        ],
+        "T5": [
+            {
+                "expected_time": 69426,
+                "scheduled_time": 69426,
+                "destination_name": "Kopli",
+                "until": 1076,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71466,
+                "scheduled_time": 71466,
+                "destination_name": "Kopli",
+                "until": 3116,
+                "extra_data": ""
+            }
+        ],
+        "T1": [
+            {
+                "expected_time": 68670,
+                "scheduled_time": 68034,
+                "destination_name": "Kopli",
+                "until": 320,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 68796,
+                "scheduled_time": 68796,
+                "destination_name": "Kopli",
+                "until": 446,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69624,
+                "scheduled_time": 69624,
+                "destination_name": "Kopli",
+                "until": 1274,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 70404,
+                "scheduled_time": 70404,
+                "destination_name": "Kopli",
+                "until": 2054,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 71184,
+                "scheduled_time": 71184,
+                "destination_name": "Kopli",
+                "until": 2834,
+                "extra_data": ""
+            }
+        ]
+    },
+    "1293": {
+        "73": [
+            {
+                "expected_time": 69000,
+                "scheduled_time": 68988,
+                "destination_name": "Vana-Lõuna",
+                "until": 650,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 69828,
+                "scheduled_time": 69828,
+                "destination_name": "Vana-Lõuna",
+                "until": 1478,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 70728,
+                "scheduled_time": 70728,
+                "destination_name": "Vana-Lõuna",
+                "until": 2378,
+                "extra_data": "Z"
+            },
+            {
+                "expected_time": 71748,
+                "scheduled_time": 71748,
+                "destination_name": "Vana-Lõuna",
+                "until": 3398,
+                "extra_data": "Z"
+            }
+        ],
+        "41": [
+            {
+                "expected_time": 68754,
+                "scheduled_time": 68720,
+                "destination_name": "Kakumäe",
+                "until": 404,
+                "extra_data": ""
+            },
+            {
+                "expected_time": 70340,
+                "scheduled_time": 70340,
+                "destination_name": "Kakumäe",
+                "until": 1990,
+                "extra_data": "Z"
+            }
+        ]
+    }
+}

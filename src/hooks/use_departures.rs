@@ -45,7 +45,14 @@ pub fn use_departures(radio: &Radio<Data, DataChannel>) {
                 };
 
                 next_update = Utc::now() + Duration::from_secs(stops_departures.1.into());
-                *departures.write() = stops_departures.0;
+                *departures.write() = stops_departures.0.clone();
+
+                // println!("Departures: {:?}", stops_departures.0);
+
+                // let _ = fs::write(
+                //     "departures.json",
+                //     serde_json::to_string(&stops_departures.0).unwrap(),
+                // );
             }
         });
     });

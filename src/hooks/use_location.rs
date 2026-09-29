@@ -1,7 +1,4 @@
-use freya::{
-    prelude::{Interactive::No, *},
-    radio::Radio,
-};
+use freya::{prelude::*, radio::Radio};
 
 use crate::launch_config::{AppState, Data, DataChannel};
 

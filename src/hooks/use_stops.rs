@@ -27,7 +27,7 @@ pub fn use_stops(radio: &Radio<Data, DataChannel>) {
                 }
             }
 
-            *stops.write() = new_stops;
+            *stops.write() = new_stops.clone();
         });
     });
 

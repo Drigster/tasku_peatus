@@ -1,6 +1,6 @@
-use freya::{prelude::*, radio::use_radio, router::Outlet};
+use freya::{prelude::*, router::Outlet};
 
-use crate::{app::Route, launch_config::DataChannel};
+use crate::app::Route;
 
 #[derive(PartialEq)]
 pub struct AppLayout;

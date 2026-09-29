@@ -1,20 +1,23 @@
 use blocking::unblock;
 use chrono::Utc;
+use revision::revisioned;
+use serde::Serialize;
 use std::{collections::HashMap, vec};
 
 use crate::utils::{text_utils::parse_csv_line, transit::parsers::routes::RouteType};
 
-#[derive(Debug, Clone, PartialEq)]
+#[revisioned(revision = 1)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Departure {
-    pub expected_times: Vec<u64>,
-    pub scheduled_times: Vec<u64>,
+    pub expected_time: u32,
+    pub scheduled_time: u16,
     pub destination_name: String,
     pub until: u32,
-    pub extra_data: String,
+    pub extra_data: Option<String>,
 }
 
-//                                                        destination_name
-pub type Departures = HashMap<String, HashMap<(RouteType, String), Departure>>;
+//                            siri_id
+pub type Departures = HashMap<String, HashMap<RouteType, Vec<Departure>>>;
 
 pub async fn get_departures(
     siri_ids: Vec<String>,
@@ -78,7 +81,7 @@ pub async fn get_departures(
             let until_index = 5;
             let extra_data_index = 6;
 
-            let mut current_stop = Option::<String>::None;
+            let mut current_stop_siri_id = Option::<String>::None;
             for line in lines {
                 if line.starts_with("#") {
                     continue;
@@ -92,9 +95,10 @@ pub async fn get_departures(
                 let row_type = row_type.unwrap();
 
                 if row_type == "stop" && parts.len() >= 2 {
-                    current_stop = chunk.iter().find(|e| *e == parts.get(1).unwrap()).cloned();
+                    current_stop_siri_id =
+                        chunk.iter().find(|e| *e == parts.get(1).unwrap()).cloned();
                     continue;
-                } else if current_stop.is_none() {
+                } else if current_stop_siri_id.is_none() {
                     continue;
                 }
 
@@ -103,13 +107,16 @@ pub async fn get_departures(
                 let expected_time = parts
                     .get(expected_time_index)
                     .unwrap()
-                    .parse::<u64>()
+                    .parse::<u32>()
                     .unwrap();
                 let scheduled_time = parts
                     .get(scheduled_time_index)
                     .unwrap()
-                    .parse::<u64>()
+                    .parse::<u32>()
                     .unwrap();
+                // scheduled time is in seconds by default, convert to minutes to match routes
+                let scheduled_time = (scheduled_time / 60) as u16;
+
                 let direction = parts.get(dirsection_index).unwrap().to_string();
                 let until = parts.get(until_index).unwrap().parse::<u32>().unwrap();
                 let extra_data = parts
@@ -121,24 +128,30 @@ pub async fn get_departures(
                     next_update = until;
                 }
 
-                let current_departures =
-                    departures.entry(current_stop.clone().unwrap()).or_default();
-                if let Some(departure) = current_departures
-                    .iter_mut()
-                    .find(|e| *e.0 == (departure_type.clone(), direction.clone()))
-                {
-                    departure.1.expected_times.push(expected_time);
-                    departure.1.scheduled_times.push(scheduled_time);
-                } else {
-                    let departure = Departure {
-                        expected_times: vec![expected_time],
-                        scheduled_times: vec![scheduled_time],
-                        destination_name: direction.clone(),
-                        until,
-                        extra_data,
-                    };
+                let current_departures = departures
+                    .entry(current_stop_siri_id.clone().unwrap())
+                    .or_default();
 
-                    current_departures.insert((departure_type, direction), departure);
+                match current_departures.get_mut(&departure_type) {
+                    Some(departures) => {
+                        departures.push(Departure {
+                            expected_time,
+                            scheduled_time,
+                            destination_name: direction.clone(),
+                            until,
+                            extra_data: Some(extra_data),
+                        });
+                    }
+                    None => {
+                        let departures = vec![Departure {
+                            expected_time,
+                            scheduled_time,
+                            destination_name: direction.clone(),
+                            until,
+                            extra_data: Some(extra_data),
+                        }];
+                        current_departures.insert(departure_type, departures);
+                    }
                 }
             }
         }

@@ -1,19 +1,29 @@
 use std::time::Duration;
 
-use chrono::TimeDelta;
-use freya::{icons::lucide, prelude::*};
+use freya::prelude::*;
 
-use crate::utils::transit::parsers::{departures::Departure, routes::Route};
+use crate::utils::transit::parsers::routes::RouteType;
+
+#[derive(Clone, PartialEq)]
+pub struct DepartureTimes {
+    pub(crate) destination_name: String,
+    pub(crate) until: u32,
+    pub(crate) extra_data: Option<String>,
+    pub(crate) scheduled_times: Vec<u32>,
+}
 
 #[derive(Clone, PartialEq)]
 pub struct DepartureComponent {
-    pub departure: Departure,
-    pub route: Route,
+    pub route_type: RouteType,
+    pub departure_times: DepartureTimes,
 }
 
 impl DepartureComponent {
-    pub fn new(route: Route, departure: Departure) -> Self {
-        Self { route, departure }
+    pub fn new(route_type: RouteType, departure_times: DepartureTimes) -> Self {
+        Self {
+            route_type,
+            departure_times,
+        }
     }
 }
 
@@ -21,7 +31,7 @@ impl Component for DepartureComponent {
     fn render(&self) -> impl IntoElement {
         let theme = use_theme();
 
-        let mut departure_time = use_state(|| self.departure.until);
+        let mut departure_time = use_state(|| self.departure_times.until);
         // let radio = use_radio(DataChannel::RoutesUpdate);
         // let route_times = match radio.read().routes.get(&self.stop_id) {
         //     Some(route_times) => {
@@ -51,10 +61,9 @@ impl Component for DepartureComponent {
         //     .take(5)
         //     .collect::<Vec<i32>>();
 
-        let (transport_icon, transport_color) =
-            self.route.route_type.get_transport_icon_and_color();
+        let (transport_icon, transport_color) = self.route_type.get_transport_icon_and_color();
 
-        use_side_effect_with_deps(&self.departure.until, move |value| {
+        use_side_effect_with_deps(&self.departure_times.until, move |value| {
             departure_time.set(*value);
         });
 
@@ -134,31 +143,24 @@ impl Component for DepartureComponent {
                                                     .color(theme.read().colors.text_primary)
                                                     .font_size(13.0)
                                                     .font_weight(FontWeight::BLACK)
-                                                    .text(self.route.route_type.get_route()),
+                                                    .text(self.route_type.get_route()),
                                             ),
                                     )
-                                    .maybe_child(if self.route.is_night {
-                                        Some(
-                                            SvgViewer::new(lucide::moon())
-                                                .width(Size::px(20.0))
-                                                .height(Size::px(20.0)),
-                                        )
-                                    } else {
-                                        None
-                                    })
+                                    // .maybe_child(if self.departure_times.is_night {
+                                    //     Some(
+                                    //         SvgViewer::new(lucide::moon())
+                                    //             .width(Size::px(20.0))
+                                    //             .height(Size::px(20.0)),
+                                    //     )
+                                    // } else {
+                                    //     None
+                                    // })
                                     .child(
                                         label()
                                             .font_size(20.0)
                                             .font_weight(FontWeight::BOLD)
                                             .max_lines(1)
-                                            .text(
-                                                self.route
-                                                    .route_name
-                                                    .split(" - ")
-                                                    .last()
-                                                    .unwrap_or(&self.route.route_name)
-                                                    .to_string(),
-                                            ),
+                                            .text(self.departure_times.destination_name.clone()),
                                     ),
                             )
                             .child(
@@ -167,18 +169,13 @@ impl Component for DepartureComponent {
                                     .font_size(15.0)
                                     .max_lines(1)
                                     .text({
-                                        self.departure
+                                        self.departure_times
                                             .scheduled_times
                                             .iter()
-                                            .map(|time| {
-                                                let time = TimeDelta::seconds(*time as i64);
-                                                format!(
-                                                    "{}:{:02}",
-                                                    time.num_hours(),
-                                                    time.num_minutes() % 60
-                                                )
-                                            })
                                             .take(5)
+                                            .map(|time| {
+                                                format!("{:02}:{:02}", time / 60 % 24, time % 60)
+                                            })
                                             .collect::<Vec<String>>()
                                             .join(", ")
                                     }),

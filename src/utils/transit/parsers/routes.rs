@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use freya::prelude::{Bytes, Color};
 use revision::{from_slice, revisioned, to_vec};
+use serde::Serialize;
 use std::{collections::HashMap, fs, path::PathBuf};
 
 use crate::{
@@ -10,7 +11,7 @@ use crate::{
 
 static ROUTES_URL: &str = "https://transport.tallinn.ee/data/routes.txt";
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 #[allow(dead_code)]
 struct RawRoute {
     route_num: String,
@@ -31,7 +32,7 @@ struct RawRoute {
     times: Option<ExplodedTimes>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize)]
 struct ExplodedTimes {
     weekdays: Vec<String>,
     valid_from: Vec<i32>,
@@ -41,7 +42,7 @@ struct ExplodedTimes {
 }
 
 #[revisioned(revision = 2)]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub enum RouteType {
     Metro(String),
     Bus(String),
@@ -186,16 +187,52 @@ impl RouteType {
 //                        StopId
 pub type Routes = HashMap<String, Vec<Route>>;
 
-#[revisioned(revision = 1)]
-#[derive(Debug, Clone, PartialEq)]
+#[revisioned(revision = 4)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Route {
     pub route_type: RouteType,
-    pub weekdays_times: HashMap<u8, Vec<i32>>,
+    pub weekdays_times: HashMap<Weekdays, Vec<WeekdaysTime>>,
     pub route_name: String,
     pub route_key: String,
     pub destination_key: String,
     pub destination_name: String,
     pub is_night: bool,
+}
+
+#[revisioned(revision = 1)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub enum Weekdays {
+    Workdays,
+    Weekends,
+    Saturday,
+    Sunday,
+    All,
+    Other(u8),
+}
+
+impl Weekdays {
+    pub fn is_nth_day(&self, n: u8) -> bool {
+        if n == 0 || n > 7 {
+            return false;
+        }
+
+        match self {
+            Weekdays::Workdays => n < 6,
+            Weekdays::Weekends => n >= 6,
+            Weekdays::Saturday => n == 6,
+            Weekdays::Sunday => n == 7,
+            Weekdays::All => true,
+            Weekdays::Other(day) => *day == n,
+        }
+    }
+}
+
+#[revisioned(revision = 1)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct WeekdaysTime {
+    pub times: u32,
+    pub valid_from: u32,
+    pub valid_to: u32,
 }
 
 pub async fn get_routes() -> Result<Routes, Box<dyn std::error::Error>> {
@@ -421,21 +458,74 @@ fn convert_route(routes: Vec<RawRoute>) -> Routes {
         for (i, route_stop) in route.route_stops.iter().enumerate() {
             let weekdays_times = match route.times {
                 Some(ref times) => {
-                    let mut weekdays_times: HashMap<u8, Vec<i32>> = HashMap::new();
+                    let mut weekdays_times: HashMap<Weekdays, Vec<WeekdaysTime>> = HashMap::new();
                     for (j, weekdays) in times.weekdays.iter().enumerate() {
-                        for weekday in weekdays.split("").into_iter() {
-                            if weekday.is_empty() {
-                                continue;
-                            }
-                            let weekday = weekday.parse::<u8>().unwrap();
-                            let today = weekdays_times.get_mut(&weekday);
-                            if let Some(today) = today {
-                                today.push(times.times[i][j]);
-                            } else {
-                                weekdays_times.insert(weekday, vec![times.times[i][j]]);
+                        let weekday = match weekdays.as_str() {
+                            "1234567" => Some(Weekdays::All),
+                            "12345" => Some(Weekdays::Workdays),
+                            "67" => Some(Weekdays::Weekends),
+                            "6" => Some(Weekdays::Saturday),
+                            "7" => Some(Weekdays::Sunday),
+                            _ => None,
+                        };
+                        let dep_times = times.times[i][j];
+                        if dep_times < 0 {
+                            continue;
+                        }
+                        let dep_times = dep_times as u32;
+
+                        let valid_from = times.valid_from[j] as u32;
+                        let valid_to = times.valid_to[j] as u32;
+
+                        if let Some(weekday) = weekday {
+                            weekdays_times
+                                .entry(weekday)
+                                .and_modify(|e| {
+                                    e.push(WeekdaysTime {
+                                        times: dep_times,
+                                        valid_from: valid_from,
+                                        valid_to: valid_to,
+                                    });
+                                })
+                                .or_insert(vec![WeekdaysTime {
+                                    times: dep_times,
+                                    valid_from: valid_from,
+                                    valid_to: valid_to,
+                                }]);
+                        } else {
+                            println!("Unknown weekday: {weekdays}");
+                            for weekday in weekdays.split("").into_iter() {
+                                if weekday.is_empty() {
+                                    continue;
+                                }
+                                let weekday = Weekdays::Other(weekday.parse::<u8>().unwrap());
+                                weekdays_times
+                                    .entry(weekday)
+                                    .and_modify(|e| {
+                                        e.push(WeekdaysTime {
+                                            times: dep_times,
+                                            valid_from: valid_from,
+                                            valid_to: valid_to,
+                                        })
+                                    })
+                                    .or_insert(vec![WeekdaysTime {
+                                        times: dep_times,
+                                        valid_from: valid_from,
+                                        valid_to: valid_to,
+                                    }]);
                             }
                         }
                     }
+
+                    if let Some(saturday) = weekdays_times.get(&Weekdays::Saturday)
+                        && let Some(sunday) = weekdays_times.get(&Weekdays::Sunday)
+                        && saturday == sunday
+                    {
+                        weekdays_times.insert(Weekdays::Weekends, saturday.clone());
+                        weekdays_times.remove(&Weekdays::Sunday);
+                        weekdays_times.remove(&Weekdays::Saturday);
+                    }
+
                     weekdays_times
                 }
                 None => HashMap::new(),
@@ -464,7 +554,7 @@ fn convert_route(routes: Vec<RawRoute>) -> Routes {
                                     println!("{:?} {:?} {:?}", times, route_stop, route);
                                 }
                                 times.append(&mut weekday_times.clone());
-                                times.sort();
+                                times.sort_by(|a, b| a.times.cmp(&b.times));
                             }
                         });
                 } else {

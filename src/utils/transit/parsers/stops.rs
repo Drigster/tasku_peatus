@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use geo::{Distance, Haversine, Point};
 use revision::{from_slice, revisioned, to_vec};
+use serde::Serialize;
 use std::{collections::HashMap, fs, path::PathBuf};
 
 use crate::{
@@ -13,7 +14,7 @@ use crate::{
 static STOPS_URL: &str = "https://transport.tallinn.ee/data/stops.txt";
 
 #[revisioned(revision = 2)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Stop {
     pub stop_id: String,
     pub siri_id: String,
