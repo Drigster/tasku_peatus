@@ -199,8 +199,19 @@ pub struct Route {
 }
 
 pub async fn get_routes() -> Result<Routes, Box<dyn std::error::Error>> {
-    let last_modified = DateTime::<Utc>::MAX_UTC;
-    if get_routes_file_path().exists() && last_modified >= get_last_modified_version() {
+    let current_last_modified = match fs::read_to_string(get_routes_last_modified_file_path()) {
+        Ok(contents) => match contents.trim().parse::<i64>() {
+            Ok(timestamp) => {
+                DateTime::<Utc>::from_timestamp(timestamp, 0).unwrap_or(DateTime::<Utc>::MIN_UTC)
+            }
+            Err(_) => DateTime::<Utc>::MIN_UTC,
+        },
+        Err(_) => DateTime::<Utc>::MIN_UTC,
+    };
+    let target_last_modified = get_last_modified_version();
+    println!("Current routes last modified: {current_last_modified:?}");
+    println!("Target routes last modified: {target_last_modified:?}");
+    if get_routes_file_path().exists() && current_last_modified >= target_last_modified {
         let routes = blocking::unblock(|| {
             let bytes = match fs::read(get_routes_file_path()) {
                 Ok(bytes) => bytes,
@@ -231,6 +242,11 @@ pub async fn get_routes() -> Result<Routes, Box<dyn std::error::Error>> {
     })
     .await
     .map_err(|e: ureq::Error| -> Box<dyn std::error::Error> { Box::new(e) })?;
+
+    fs::write(
+        get_routes_last_modified_file_path(),
+        Utc::now().timestamp().to_string(),
+    )?;
 
     let routes = convert_route(routes);
 
@@ -372,12 +388,12 @@ pub fn get_last_modified_version() -> DateTime<Utc> {
         Ok(response) => match response.headers().get("Last-Modified") {
             Some(last_modified) => DateTime::parse_from_rfc2822(last_modified.to_str().unwrap())
                 .unwrap()
-                .into(),
-            None => DateTime::<Utc>::MIN_UTC,
+                .to_utc(),
+            None => DateTime::<Utc>::MAX_UTC,
         },
         Err(e) => {
             log::error!("Error getting last modified version: {e}");
-            DateTime::<Utc>::MIN_UTC
+            DateTime::<Utc>::MAX_UTC
         }
     }
 }
@@ -388,6 +404,14 @@ pub fn get_routes_file_path() -> PathBuf {
         std::fs::create_dir_all(&cache_dir).unwrap();
     }
     cache_dir.join("routes.dat")
+}
+
+pub fn get_routes_last_modified_file_path() -> PathBuf {
+    let cache_dir = get_cache_dir().unwrap().join(APP_DIR_NAME);
+    if !cache_dir.exists() {
+        std::fs::create_dir_all(&cache_dir).unwrap();
+    }
+    cache_dir.join("routes_last_modified.dat")
 }
 
 fn convert_route(routes: Vec<RawRoute>) -> Routes {

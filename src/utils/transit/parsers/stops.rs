@@ -6,9 +6,7 @@ use std::{collections::HashMap, fs, path::PathBuf};
 use crate::{
     launch_config::APP_DIR_NAME,
     utils::{
-        preferences::get_cache_dir,
-        text_utils::parse_csv_line,
-        transit::parsers::routes::{Route, get_routes},
+        preferences::get_cache_dir, text_utils::parse_csv_line, transit::parsers::routes::Route,
     },
 };
 
@@ -34,8 +32,19 @@ pub struct StopRadius {
 }
 
 pub async fn get_stops() -> Result<HashMap<String, Stop>, Box<dyn std::error::Error>> {
-    let last_modified = DateTime::<Utc>::MAX_UTC;
-    if get_stops_file_path().exists() && last_modified >= get_last_modified_version() {
+    let current_last_modified = match fs::read_to_string(get_stops_last_modified_file_path()) {
+        Ok(contents) => match contents.trim().parse::<i64>() {
+            Ok(timestamp) => {
+                DateTime::<Utc>::from_timestamp(timestamp, 0).unwrap_or(DateTime::<Utc>::MIN_UTC)
+            }
+            Err(_) => DateTime::<Utc>::MIN_UTC,
+        },
+        Err(_) => DateTime::<Utc>::MIN_UTC,
+    };
+    let target_last_modified = get_last_modified_version();
+    println!("Current stops last modified: {current_last_modified:?}");
+    println!("Target stops last modified: {target_last_modified:?}");
+    if get_stops_file_path().exists() && current_last_modified >= target_last_modified {
         let stops = blocking::unblock(|| {
             let bytes = match fs::read(get_stops_file_path()) {
                 Ok(bytes) => bytes,
@@ -55,7 +64,7 @@ pub async fn get_stops() -> Result<HashMap<String, Stop>, Box<dyn std::error::Er
             Err(err) => println!("Error reading stops: {err}"),
         }
     }
-    let mut stops = blocking::unblock(|| {
+    let stops = blocking::unblock(|| {
         let mut result = ureq::get(STOPS_URL).call().expect("Error getting stops");
         let body = result
             .body_mut()
@@ -66,13 +75,10 @@ pub async fn get_stops() -> Result<HashMap<String, Stop>, Box<dyn std::error::Er
     })
     .await;
 
-    let routes = get_routes().await.unwrap();
-
-    for (stop_id, route) in routes {
-        if let Some(stop) = stops.get_mut(&stop_id) {
-            stop.routes = route.clone();
-        }
-    }
+    fs::write(
+        get_stops_last_modified_file_path(),
+        Utc::now().timestamp().to_string(),
+    )?;
 
     blocking::unblock(|| {
         let bytes = to_vec(&stops).unwrap();
@@ -215,11 +221,11 @@ pub fn get_last_modified_version() -> DateTime<Utc> {
             Some(last_modified) => DateTime::parse_from_rfc2822(last_modified.to_str().unwrap())
                 .unwrap()
                 .into(),
-            None => DateTime::<Utc>::MIN_UTC,
+            None => DateTime::<Utc>::MAX_UTC,
         },
         Err(e) => {
             log::error!("Error getting last modified version: {e}");
-            DateTime::<Utc>::MIN_UTC
+            DateTime::<Utc>::MAX_UTC
         }
     }
 }
@@ -230,6 +236,14 @@ pub fn get_stops_file_path() -> PathBuf {
         std::fs::create_dir_all(&cache_dir).unwrap();
     }
     cache_dir.join("stops.dat")
+}
+
+pub fn get_stops_last_modified_file_path() -> PathBuf {
+    let cache_dir = get_cache_dir().unwrap().join(APP_DIR_NAME);
+    if !cache_dir.exists() {
+        std::fs::create_dir_all(&cache_dir).unwrap();
+    }
+    cache_dir.join("stops_last_modified.dat")
 }
 
 fn meters_to_degrees_lat(meters: f64) -> f64 {

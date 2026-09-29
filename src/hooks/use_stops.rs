@@ -2,7 +2,10 @@ use freya::{prelude::*, radio::Radio};
 
 use crate::{
     launch_config::{Data, DataChannel},
-    utils::transit::parsers::stops::{get_stops, get_stops_in_radius},
+    utils::transit::parsers::{
+        routes::get_routes,
+        stops::{get_stops, get_stops_in_radius},
+    },
 };
 
 pub fn use_stops(radio: &Radio<Data, DataChannel>) {
@@ -14,7 +17,15 @@ pub fn use_stops(radio: &Radio<Data, DataChannel>) {
                 return;
             }
 
-            let new_stops = get_stops().await.unwrap();
+            let mut new_stops = get_stops().await.unwrap();
+
+            let routes = get_routes().await.unwrap();
+
+            for (stop_id, route) in routes {
+                if let Some(stop) = new_stops.get_mut(&stop_id) {
+                    stop.routes = route.clone();
+                }
+            }
 
             *stops.write() = new_stops;
         });
