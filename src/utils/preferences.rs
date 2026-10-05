@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::LazyLock};
 
 // pub fn get_or<T>(name: &str, default: Value) -> Value
 // where
@@ -67,4 +67,25 @@ pub fn get_cache_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
         use crate::utils::jni_utils::get_cache_dir_android;
         get_cache_dir_android()
     }
+}
+
+/// The app's cache directory, resolved and created once.
+///
+/// The four cache-path helpers each used to call `get_cache_dir()` (a `dirs`
+/// lookup, or a JNI call on Android), stat the directory and possibly create it
+/// — on every call, several times per fetch.
+static APP_CACHE_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
+    let cache_dir = get_cache_dir()
+        .expect("Could not resolve cache directory")
+        .join(crate::launch_config::APP_DIR_NAME);
+
+    if !cache_dir.exists() {
+        std::fs::create_dir_all(&cache_dir).expect("Could not create cache directory");
+    }
+
+    cache_dir
+});
+
+pub fn app_cache_dir() -> &'static PathBuf {
+    &APP_CACHE_DIR
 }

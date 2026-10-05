@@ -1,15 +1,40 @@
-use std::time::Duration;
+use freya::{prelude::*, radio::use_radio};
 
-use freya::prelude::*;
+use crate::{launch_config::DataChannel, utils::transit::parsers::routes::RouteType};
 
-use crate::utils::transit::parsers::routes::RouteType;
+/// Depot runs terminate at the depot instead of serving the line, so they are
+/// called out rather than blending into the times list.
+const DEPOT_TIME_COLOR: Color = Color::from_rgb(0x9c, 0x16, 0x30);
+
+pub(crate) fn format_time(minutes: u32) -> String {
+    format!("{:02}:{:02}", minutes / 60 % 24, minutes % 60)
+}
+
+#[derive(Clone, PartialEq)]
+pub struct ScheduledTime {
+    pub(crate) text: String,
+    /// True when only the static timetable lists this departure and the live
+    /// feed has not confirmed it. Shown underlined.
+    pub(crate) schedule_only: bool,
+    /// True when this departure runs to the depot (destination key "dp").
+    /// Highlighted so it is not mistaken for a normal service.
+    pub(crate) to_depot: bool,
+}
 
 #[derive(Clone, PartialEq)]
 pub struct DepartureTimes {
     pub(crate) destination_name: String,
-    pub(crate) until: u32,
+    /// Seconds until departure as reported by the live feed, or `None` when the
+    /// feed says nothing about this route. A countdown is only meaningful in
+    /// the first case.
+    pub(crate) until: Option<u32>,
     pub(crate) extra_data: Option<String>,
-    pub(crate) scheduled_times: Vec<u32>,
+    /// The next few upcoming departures, pre-formatted where the schedule is
+    /// filtered so they are not rebuilt on every clock tick.
+    pub(crate) scheduled_times: Vec<ScheduledTime>,
+    /// First upcoming scheduled departure, minutes from midnight. Used to order
+    /// rows deterministically when their live countdowns tie.
+    pub(crate) next_scheduled: Option<u32>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -28,59 +53,35 @@ impl DepartureComponent {
 }
 
 impl Component for DepartureComponent {
+    /// Rows are sorted by time-until-departure, which reorders them constantly.
+    /// Keying on the route keeps each row's scope attached to its route instead
+    /// of to a list position. One row per `RouteType` per stop, so this is
+    /// unique among siblings.
+    fn render_key(&self) -> DiffKey {
+        DiffKey::from(&self.route_type)
+    }
+
     fn render(&self) -> impl IntoElement {
         let theme = use_theme();
+        let radio = use_radio(DataChannel::TickUpdate);
 
-        let mut departure_time = use_state(|| self.departure_times.until);
-        // let radio = use_radio(DataChannel::RoutesUpdate);
-        // let route_times = match radio.read().routes.get(&self.stop_id) {
-        //     Some(route_times) => {
-        //         match route_times.get(&(
-        //             self.departure.route_type.clone(),
-        //             self.departure.route.clone(),
-        //         )) {
-        //             Some(route_times) => route_times.clone(),
-        //             None => HashMap::new(),
-        //         }
-        //     }
-        //     None => HashMap::new(),
-        // };
-        // println!(
-        //     "{:?} {:?} {:?}",
-        //     self.departure.direction, self.departure.route, route_times
-        // );
-
-        // let now = Local::now();
-        // let today_route_times = route_times
-        //     .get(&(now.weekday().num_days_from_monday() as u8 + 1))
-        //     .unwrap_or(&vec![])
-        //     .clone();
-        // let filtered_route_times = today_route_times
-        //     .into_iter()
-        //     .filter(|e| (e * 60) >= now.num_seconds_from_midnight() as i32)
-        //     .take(5)
-        //     .collect::<Vec<i32>>();
+        // Derived from the shared clock rather than a per-row timer. Reading
+        // `departures_fetched_at` needs no subscription of its own: when it
+        // changes, so does `until`, and the parent re-renders this row.
+        // Only the live feed can support a countdown. Without it the row falls
+        // back to showing when the next timetabled departure is due.
+        let countdown = self.departure_times.until.map(|until| {
+            let data = radio.read();
+            let elapsed = (data.now - data.departures_fetched_at).max(0);
+            until.saturating_sub(elapsed.min(u32::MAX as i64) as u32)
+        });
 
         let (transport_icon, transport_color) = self.route_type.get_transport_icon_and_color();
 
-        use_side_effect_with_deps(&self.departure_times.until, move |value| {
-            departure_time.set(*value);
-        });
-
-        use_hook(|| {
-            spawn({
-                async move {
-                    loop {
-                        smol::Timer::after(Duration::from_secs(1)).await;
-                        if *departure_time.read() == 0 {
-                            continue;
-                        }
-
-                        *departure_time.write() -= 1;
-                    }
-                }
-            });
-        });
+        let (primary, text_primary) = {
+            let theme = theme.read();
+            (theme.colors.primary, theme.colors.text_primary)
+        };
 
         rect()
             .width(Size::Fill)
@@ -97,16 +98,9 @@ impl Component for DepartureComponent {
                     .width(Size::Fill)
                     .height(Size::px(70.0))
                     .corner_radius(6.0)
-                    .background(theme.read().colors.primary)
+                    .background(primary)
                     .direction(Direction::Horizontal)
                     .content(Content::Flex)
-                    // .shadow(
-                    //     Shadow::new()
-                    //         .x(3.0)
-                    //         .y(3.0)
-                    //         .blur(6.0)
-                    //         .color(Color::BLACK.with_a(102)),
-                    // )
                     .child(
                         rect()
                             .height(Size::px(70.0))
@@ -140,21 +134,12 @@ impl Component for DepartureComponent {
                                             .corner_radius(8.0)
                                             .child(
                                                 label()
-                                                    .color(theme.read().colors.text_primary)
+                                                    .color(text_primary)
                                                     .font_size(13.0)
                                                     .font_weight(FontWeight::BLACK)
-                                                    .text(self.route_type.get_route()),
+                                                    .text(self.route_type.get_route().to_string()),
                                             ),
                                     )
-                                    // .maybe_child(if self.departure_times.is_night {
-                                    //     Some(
-                                    //         SvgViewer::new(lucide::moon())
-                                    //             .width(Size::px(20.0))
-                                    //             .height(Size::px(20.0)),
-                                    //     )
-                                    // } else {
-                                    //     None
-                                    // })
                                     .child(
                                         label()
                                             .font_size(20.0)
@@ -163,41 +148,38 @@ impl Component for DepartureComponent {
                                             .text(self.departure_times.destination_name.clone()),
                                     ),
                             )
-                            .child(
-                                label()
-                                    .color(theme.read().colors.text_primary)
+                            .child({
+                                // One span per time so the unconfirmed ones can
+                                // be underlined individually; the separators stay
+                                // undecorated so the rule does not run through
+                                // the commas. Spans inherit the paragraph's
+                                // colour and size and only override decoration.
+                                let mut spans: Vec<Span<'static>> = Vec::new();
+                                for scheduled in &self.departure_times.scheduled_times {
+                                    if !spans.is_empty() {
+                                        spans.push(Span::new(", "));
+                                    }
+
+                                    // The two markers are independent: a depot
+                                    // run can also be unconfirmed.
+                                    let mut span = Span::new(scheduled.text.clone());
+                                    if scheduled.to_depot {
+                                        span = span
+                                            .color(DEPOT_TIME_COLOR)
+                                            .font_weight(FontWeight::BOLD);
+                                    }
+                                    if scheduled.schedule_only {
+                                        span = span.text_decoration(TextDecoration::Underline);
+                                    }
+                                    spans.push(span);
+                                }
+
+                                paragraph()
+                                    .color(text_primary)
                                     .font_size(15.0)
                                     .max_lines(1)
-                                    .text({
-                                        self.departure_times
-                                            .scheduled_times
-                                            .iter()
-                                            .take(5)
-                                            .map(|time| {
-                                                format!("{:02}:{:02}", time / 60 % 24, time % 60)
-                                            })
-                                            .collect::<Vec<String>>()
-                                            .join(", ")
-                                    }),
-                            ), // .child(
-                               //     label()
-                               //         .color(theme.read().colors.text_primary)
-                               //         .font_size(15.0)
-                               //         .text({
-                               //             filtered_route_times
-                               //                 .iter()
-                               //                 .map(|time| {
-                               //                     let time = TimeDelta::minutes(*time as i64);
-                               //                     format!(
-                               //                         "{}:{:02}",
-                               //                         time.num_hours(),
-                               //                         time.num_minutes() % 60
-                               //                     )
-                               //                 })
-                               //                 .collect::<Vec<String>>()
-                               //                 .join(", ")
-                               //         }),
-                               // ),
+                                    .spans_iter(spans.into_iter())
+                            }),
                     )
                     .child({
                         rect()
@@ -205,66 +187,56 @@ impl Component for DepartureComponent {
                             .width(Size::px(70.0))
                             .center()
                             .children({
-                                let departure_time = *departure_time.read() as f64;
-                                if departure_time <= 30.0 {
-                                    [
+                                match countdown {
+                                    // Integer math; `departure_time` is seconds.
+                                    Some(departure_time) => {
+                                        let (value, unit) = if departure_time <= 30 {
+                                            (None, "now")
+                                        } else if departure_time < 60 {
+                                            (Some(departure_time), "seconds")
+                                        } else if departure_time < 60 * 60 {
+                                            (Some(departure_time / 60), "minutes")
+                                        } else {
+                                            (Some(departure_time / 3600), "hours")
+                                        };
+
+                                        vec![
+                                            label()
+                                                .color(text_primary)
+                                                .font_size(25.0)
+                                                .font_weight(FontWeight::BOLD)
+                                                .text(match value {
+                                                    Some(value) => value.to_string(),
+                                                    None => "now".to_string(),
+                                                })
+                                                .into_element(),
+                                            label()
+                                                .color(text_primary)
+                                                .font_size(14.0)
+                                                .text(match value {
+                                                    Some(_) => unit.to_string(),
+                                                    None => departure_time.to_string(),
+                                                })
+                                                .into_element(),
+                                        ]
+                                    }
+                                    // A clock time is five characters wide,
+                                    // where a countdown is one or two, so it
+                                    // needs a smaller size to fit the fixed
+                                    // 70px column without wrapping.
+                                    None => vec![
                                         label()
-                                            .color(theme.read().colors.text_primary)
-                                            .font_size(25.0)
-                                            .font_weight(FontWeight::BOLD)
-                                            .text("now")
+                                            .color(text_primary)
+                                            .font_size(20.0)
+                                            .max_lines(1)
+                                            .text(
+                                                self.departure_times
+                                                    .next_scheduled
+                                                    .map(format_time)
+                                                    .unwrap_or_default(),
+                                            )
                                             .into_element(),
-                                        label()
-                                            .color(theme.read().colors.text_primary)
-                                            .font_size(14.0)
-                                            .text(departure_time.to_string())
-                                            .into_element(),
-                                    ]
-                                } else if departure_time < 60.0 {
-                                    [
-                                        label()
-                                            .color(theme.read().colors.text_primary)
-                                            .font_size(25.0)
-                                            .font_weight(FontWeight::BOLD)
-                                            .text(format!("{}", departure_time))
-                                            .into_element(),
-                                        label()
-                                            .color(theme.read().colors.text_primary)
-                                            .font_size(14.0)
-                                            .text("seconds")
-                                            .into_element(),
-                                    ]
-                                } else if departure_time < 60.0 * 60.0 {
-                                    [
-                                        label()
-                                            .color(theme.read().colors.text_primary)
-                                            .font_size(25.0)
-                                            .font_weight(FontWeight::BOLD)
-                                            .text(format!("{}", (departure_time / 60.0).floor()))
-                                            .into_element(),
-                                        label()
-                                            .color(theme.read().colors.text_primary)
-                                            .font_size(14.0)
-                                            .text("minutes")
-                                            .into_element(),
-                                    ]
-                                } else {
-                                    [
-                                        label()
-                                            .color(theme.read().colors.text_primary)
-                                            .font_size(25.0)
-                                            .font_weight(FontWeight::BOLD)
-                                            .text(format!(
-                                                "{}",
-                                                (departure_time / 60.0 * 60.0).floor()
-                                            ))
-                                            .into_element(),
-                                        label()
-                                            .color(theme.read().colors.text_primary)
-                                            .font_size(14.0)
-                                            .text("hours")
-                                            .into_element(),
-                                    ]
+                                    ],
                                 }
                             })
                     }),

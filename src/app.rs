@@ -6,7 +6,7 @@ use freya::{
 use freya_router::prelude::Router;
 
 use crate::{
-    hooks::{use_departures, use_location, use_stops},
+    hooks::{use_departures, use_location, use_stops, use_ticker},
     launch_config::{Data, DataChannel},
 };
 use crate::{layouts::AppLayout, pages::Timetable};
@@ -37,6 +37,7 @@ impl App for MyApp {
         use_stops(&radio);
         use_location(&radio);
         use_departures(&radio);
+        use_ticker(&radio);
 
         Router::<Route>::new(|| RouterConfig::default().with_initial_path(Route::Timetable))
     }

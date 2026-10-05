@@ -17,13 +17,17 @@ pub fn use_location(radio: &Radio<Data, DataChannel>) {
     let location_clone = location.clone();
     use_side_effect(move || {
         if is_loading() == false {
-            if *is_location_enabled_clone.read() == false {
-                *state.write() = Some(AppState::LocationDisabled);
+            // Guarded write: this effect reruns on every location update, and an
+            // unconditional write dirties every `StateUpdate` subscriber.
+            let new_state = if *is_location_enabled_clone.read() == false {
+                Some(AppState::LocationDisabled)
             } else if location_clone.read().is_none() {
-                *state.write() = Some(AppState::WitingForLocation);
+                Some(AppState::WitingForLocation)
             } else {
-                *state.write() = None;
-            }
+                None
+            };
+
+            state.set_if_modified(new_state);
         }
     });
 
