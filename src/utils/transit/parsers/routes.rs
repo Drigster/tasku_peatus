@@ -17,7 +17,7 @@ struct RawRoute {
     transport: String,
     operator: String,
     validity_periods: Vec<u64>,
-    special_dates: Vec<u64>,
+    special_dates: Vec<SpecialDatesRef>,
     route_tag: String,
     route_type: String,
     commercial: String,
@@ -27,6 +27,23 @@ struct RawRoute {
     route_stops: Vec<String>,
     route_stops_platforms: String,
     times: Option<ExplodedTimes>,
+}
+
+/// One `group,weekday` pair from a route's `SpecialDates` column: on any date
+/// in the referenced `SpecialDates` group, the route runs the timetable of
+/// `weekday` instead of the calendar one. `Some(0)` means it does not run at
+/// all, `None` (`*` in the feed) keeps the calendar weekday.
+#[derive(Debug, Clone, Serialize)]
+struct SpecialDatesRef {
+    group: String,
+    weekday: Option<u8>,
+}
+
+/// Everything `parse_routes` extracts from `routes.txt`.
+struct ParsedRoutes {
+    routes: Vec<RawRoute>,
+    /// `SpecialDates` groups by id, as feed day numbers.
+    special_date_groups: HashMap<String, Vec<u32>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
@@ -188,7 +205,7 @@ pub const DEPOT_DESTINATION_KEY: &str = "dp";
 //                        StopId
 pub type Routes = HashMap<String, Vec<Route>>;
 
-#[revisioned(revision = 4)]
+#[revisioned(revision = 5)]
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Route {
     pub route_type: RouteType,
@@ -198,6 +215,23 @@ pub struct Route {
     pub destination_key: String,
     pub destination_name: String,
     pub is_night: bool,
+    /// Days (feed day numbers) on which the route runs another weekday's
+    /// timetable, typically public holidays running the Sunday one. A weekday
+    /// of 0 means the route does not run that day.
+    #[revision(start = 5)]
+    pub special_weekdays: HashMap<u32, u8>,
+}
+
+impl Route {
+    /// The weekday (1 = Monday … 7 = Sunday) whose timetable applies on `day`,
+    /// or `None` when the route does not run that day.
+    pub fn effective_weekday(&self, day: u32, calendar_weekday: u8) -> Option<u8> {
+        match self.special_weekdays.get(&day) {
+            Some(0) => None,
+            Some(&weekday) => Some(weekday),
+            None => Some(calendar_weekday),
+        }
+    }
 }
 
 #[revisioned(revision = 1)]
@@ -229,11 +263,19 @@ impl Weekdays {
 }
 
 #[revisioned(revision = 1)]
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct WeekdaysTime {
     pub times: u32,
     pub valid_from: u32,
     pub valid_to: u32,
+}
+
+impl WeekdaysTime {
+    /// Total order used to line buckets up against each other. Leading with
+    /// `times` keeps a bucket sorted by time, which `StopComponent` relies on.
+    fn sort_key(&self) -> (u32, u32, u32) {
+        (self.times, self.valid_from, self.valid_to)
+    }
 }
 
 pub async fn get_routes() -> Result<Routes, Box<dyn std::error::Error>> {
@@ -294,7 +336,7 @@ pub async fn get_routes() -> Result<Routes, Box<dyn std::error::Error>> {
     Ok(routes)
 }
 
-fn parse_routes(data: String) -> Vec<RawRoute> {
+fn parse_routes(data: String) -> ParsedRoutes {
     let mut lines = data.lines();
 
     let header: Vec<&str> = lines
@@ -327,11 +369,8 @@ fn parse_routes(data: String) -> Vec<RawRoute> {
     let mut previous_parts = vec![String::new(); header_len];
 
     let mut routes: Vec<RawRoute> = Vec::new();
-    for (i, line) in lines.enumerate() {
-        if i == 0 {
-            continue;
-        }
-
+    let mut special_date_groups: HashMap<String, Vec<u32>> = HashMap::new();
+    for line in lines {
         if line.starts_with("#") {
             continue;
         }
@@ -351,16 +390,35 @@ fn parse_routes(data: String) -> Vec<RawRoute> {
             parts.resize(header_len, "".to_string());
         }
 
+        // `SpecialDates` rows open the file and define date groups rather than
+        // routes. `Authority` carries over like any other column, so every row
+        // until the first real route belongs to the block. Their other columns
+        // must not leak into the carry-over, or the first route would inherit
+        // a date list as its validity periods.
+        if !parts[authority_index].trim().is_empty() {
+            previous_parts[authority_index] = parts[authority_index].clone();
+        }
+        if previous_parts[authority_index] == "SpecialDates" {
+            // A row without a group id is meant as a network-wide weekday
+            // override, but Tallinn's feed uses it to map every Friday to
+            // Sunday onto Monday, which would put weekends on the workday
+            // timetable. Holidays come through the route references instead.
+            let group = parts[route_num_index].trim();
+            if !group.is_empty() {
+                special_date_groups.insert(
+                    group.to_string(),
+                    decode_special_dates(&parts[validity_periods_index]),
+                );
+            }
+            continue;
+        }
+
         for (j, part) in parts.iter_mut().enumerate() {
             if part.trim().is_empty() {
                 *part = previous_parts[j].clone();
             } else {
                 previous_parts[j] = part.clone();
             }
-        }
-
-        if parts[authority_index] == "SpecialDates" {
-            continue;
         }
 
         let route_num = parts[route_num_index].clone();
@@ -375,13 +433,7 @@ fn parse_routes(data: String) -> Vec<RawRoute> {
                 Err(_) => None,
             })
             .collect();
-        let special_dates = parts[special_dates_index]
-            .split(",")
-            .filter_map(|e| match e.parse::<u64>() {
-                Ok(value) => Some(value),
-                Err(_) => None,
-            })
-            .collect();
+        let special_dates = parse_special_dates_refs(&parts[special_dates_index]);
         let route_tag = parts[route_tag_index].clone();
         let route_type = parts[route_type_index].clone();
         let commercial = parts[commercial_index].clone();
@@ -416,7 +468,76 @@ fn parse_routes(data: String) -> Vec<RawRoute> {
         routes.push(route);
     }
 
-    routes
+    ParsedRoutes {
+        routes,
+        special_date_groups,
+    }
+}
+
+/// Decodes a `SpecialDates` row's date list into feed day numbers. Each entry
+/// is the gap to the previous day; an empty entry repeats the previous gap, so
+/// `20811,1,,6` is days 20811, 20812, 20813 and 20819.
+fn decode_special_dates(encoded: &str) -> Vec<u32> {
+    let mut day = 0i64;
+    let mut gap = 0i64;
+    let mut days = Vec::new();
+
+    for token in encoded.split(',') {
+        let token = token.trim();
+        if !token.is_empty() {
+            gap = token.parse().unwrap_or(0);
+        }
+        day += gap;
+        if let Ok(day) = u32::try_from(day) {
+            days.push(day);
+        }
+    }
+
+    days
+}
+
+/// Parses a route's `SpecialDates` column, a flat `group,weekday,…` list.
+/// `0` alone clears the value carried over from the previous route.
+fn parse_special_dates_refs(encoded: &str) -> Vec<SpecialDatesRef> {
+    let encoded = encoded.trim();
+    if encoded.is_empty() || encoded == "0" {
+        return Vec::new();
+    }
+
+    let tokens: Vec<&str> = encoded.split(',').map(str::trim).collect();
+    tokens
+        .chunks(2)
+        .filter(|pair| !pair[0].is_empty())
+        .map(|pair| SpecialDatesRef {
+            group: pair[0].to_string(),
+            weekday: pair.get(1).and_then(|weekday| weekday.parse().ok()),
+        })
+        .collect()
+}
+
+/// Resolves a route's `SpecialDates` references into a day → weekday map.
+/// The first reference whose group contains a day wins, so a `*` reference
+/// still shields that day from later ones.
+fn resolve_special_weekdays(
+    refs: &[SpecialDatesRef],
+    groups: &HashMap<String, Vec<u32>>,
+) -> HashMap<u32, u8> {
+    let mut resolved: HashMap<u32, Option<u8>> = HashMap::new();
+
+    for special in refs {
+        let Some(days) = groups.get(&special.group) else {
+            log::trace!("Unknown SpecialDates group: {}", special.group);
+            continue;
+        };
+        for &day in days {
+            resolved.entry(day).or_insert(special.weekday);
+        }
+    }
+
+    resolved
+        .into_iter()
+        .filter_map(|(day, weekday)| weekday.map(|weekday| (day, weekday)))
+        .collect()
 }
 
 pub fn get_last_modified_version() -> DateTime<Utc> {
@@ -455,10 +576,10 @@ struct Trip<'a> {
     valid_to: u32,
 }
 
-fn convert_route(routes: Vec<RawRoute>) -> Routes {
+fn convert_route(parsed: ParsedRoutes) -> Routes {
     let mut converted_routes: Routes = HashMap::new();
 
-    for route in routes {
+    for route in parsed.routes {
         // All route-level, so compute once rather than once per stop served.
         let route_type = RouteType::from((route.transport.clone(), route.route_num.clone()));
         let destination_key = route
@@ -474,6 +595,10 @@ fn convert_route(routes: Vec<RawRoute>) -> Routes {
             .unwrap_or(&route.route_name)
             .to_string();
         let is_night = route.route_name.starts_with("ÖÖ");
+        let special_weekdays = resolve_special_weekdays(
+            &route.special_dates,
+            &parsed.special_date_groups,
+        );
 
         let trips: Vec<Trip> = match route.times {
             Some(ref times) => times
@@ -512,6 +637,7 @@ fn convert_route(routes: Vec<RawRoute>) -> Routes {
             route_name: route.route_name.clone(),
             route_key: route.route_type.clone(),
             is_night,
+            special_weekdays: special_weekdays.clone(),
         };
 
         for (i, route_stop) in route.route_stops.iter().enumerate() {
@@ -539,25 +665,19 @@ fn convert_route(routes: Vec<RawRoute>) -> Routes {
                         }
                         None => {
                             for day in trip.raw_weekdays.chars() {
-                                let Some(day) = day.to_digit(10) else {
-                                    continue;
+                                let weekday = match day.to_digit(10) {
+                                    Some(6) => Weekdays::Saturday,
+                                    Some(7) => Weekdays::Sunday,
+                                    Some(day) => Weekdays::Other(day as u8),
+                                    None => continue,
                                 };
                                 weekdays_times
-                                    .entry(Weekdays::Other(day as u8))
+                                    .entry(weekday)
                                     .or_default()
-                                    .push(entry.clone());
+                                    .push(entry);
                             }
                         }
                     }
-                }
-
-                if let Some(saturday) = weekdays_times.get(&Weekdays::Saturday)
-                    && let Some(sunday) = weekdays_times.get(&Weekdays::Sunday)
-                    && saturday == sunday
-                {
-                    let saturday = weekdays_times.remove(&Weekdays::Saturday).unwrap();
-                    weekdays_times.remove(&Weekdays::Sunday);
-                    weekdays_times.insert(Weekdays::Weekends, saturday);
                 }
             }
 
@@ -568,13 +688,20 @@ fn convert_route(routes: Vec<RawRoute>) -> Routes {
 
                 match existing {
                     Some(existing) => {
-                        for (key, existing_times) in existing.weekdays_times.iter_mut() {
-                            if let Some(incoming) = weekdays_times.get(key) {
-                                // Sorting is deferred to one pass at the end
-                                // rather than re-sorting the whole accumulated
-                                // vector after every merge.
-                                existing_times.extend_from_slice(incoming);
-                            }
+                        // Variants rarely share the same set of buckets, so
+                        // every incoming bucket is carried over, not just the
+                        // ones the first variant happened to have. Sorting and
+                        // folding buckets together are deferred to one pass at
+                        // the end rather than repeated after every merge.
+                        for (key, incoming) in weekdays_times {
+                            existing
+                                .weekdays_times
+                                .entry(key)
+                                .or_default()
+                                .extend(incoming);
+                        }
+                        for (&day, &weekday) in &special_weekdays {
+                            existing.special_weekdays.entry(day).or_insert(weekday);
                         }
                     }
                     None => stop_routes.push(make_route(weekdays_times)),
@@ -590,12 +717,131 @@ fn convert_route(routes: Vec<RawRoute>) -> Routes {
     for stop_routes in converted_routes.values_mut() {
         for route in stop_routes.iter_mut() {
             for times in route.weekdays_times.values_mut() {
-                times.sort_by_key(|time| time.times);
+                times.sort_unstable_by_key(WeekdaysTime::sort_key);
             }
+            fold_weekday_buckets(&mut route.weekdays_times);
         }
     }
 
     converted_routes
+}
+
+const WORKDAY_BUCKETS: [Weekdays; 5] = [
+    Weekdays::Other(1),
+    Weekdays::Other(2),
+    Weekdays::Other(3),
+    Weekdays::Other(4),
+    Weekdays::Other(5),
+];
+
+/// Moves departures that several buckets share into the bucket covering all of
+/// them, so a departure running on both weekend days is stored once under
+/// `Weekends` and only what differs stays under `Saturday` / `Sunday`. The
+/// same goes for single workdays into `Workdays`, then for `Workdays` and
+/// `Weekends` into `All`. Buckets must be sorted by `WeekdaysTime::sort_key`
+/// and stay sorted.
+fn fold_weekday_buckets(buckets: &mut HashMap<Weekdays, Vec<WeekdaysTime>>) {
+    fold_common(
+        buckets,
+        &[Weekdays::Saturday, Weekdays::Sunday],
+        Weekdays::Weekends,
+    );
+    fold_common(buckets, &WORKDAY_BUCKETS, Weekdays::Workdays);
+    fold_common(
+        buckets,
+        &[Weekdays::Workdays, Weekdays::Weekends],
+        Weekdays::All,
+    );
+}
+
+fn fold_common<const N: usize>(
+    buckets: &mut HashMap<Weekdays, Vec<WeekdaysTime>>,
+    sources: &[Weekdays; N],
+    target: Weekdays,
+) {
+    // Nothing can be shared unless every source has something, which is the
+    // common case. A route holds only a handful of buckets, so scanning them
+    // is cheaper than hashing every source key just to find one missing.
+    let has = |source: &Weekdays| {
+        buckets
+            .iter()
+            .any(|(key, times)| key == source && !times.is_empty())
+    };
+    if !sources.iter().all(has) {
+        return;
+    }
+    let mut lists = buckets
+        .get_disjoint_mut(sources.each_ref())
+        .map(|list| list.expect("checked above"));
+
+    let common = take_common(&mut lists);
+    if common.is_empty() {
+        return;
+    }
+
+    for source in sources {
+        if buckets.get(source).is_some_and(Vec::is_empty) {
+            buckets.remove(source);
+        }
+    }
+
+    let target = buckets.entry(target).or_default();
+    if target.is_empty() {
+        *target = common;
+    } else {
+        target.extend(common);
+        target.sort_unstable_by_key(WeekdaysTime::sort_key);
+    }
+}
+
+/// Removes the entries present in every list and returns them, in one linear
+/// pass over lists sorted by `WeekdaysTime::sort_key`. The lists are compacted
+/// in place and stay sorted. Duplicates are matched one to one, so an entry
+/// listed twice in each list is taken twice.
+fn take_common<const N: usize>(lists: &mut [&mut Vec<WeekdaysTime>; N]) -> Vec<WeekdaysTime> {
+    let mut read = [0usize; N];
+    let mut write = [0usize; N];
+    let mut common = Vec::new();
+
+    'scan: loop {
+        // Every list's next entry is a candidate; only the largest can be in
+        // all of them, so the others are kept as they are skipped.
+        let mut target = (0, 0, 0);
+        for (list, &read) in lists.iter().zip(&read) {
+            let Some(time) = list.get(read) else {
+                break 'scan;
+            };
+            target = target.max(time.sort_key());
+        }
+
+        let mut all_match = true;
+        for ((list, read), write) in lists.iter_mut().zip(&mut read).zip(&mut write) {
+            while list.get(*read).is_some_and(|time| time.sort_key() < target) {
+                list[*write] = list[*read];
+                *write += 1;
+                *read += 1;
+            }
+            match list.get(*read) {
+                Some(time) if time.sort_key() == target => {}
+                Some(_) => all_match = false,
+                None => break 'scan,
+            }
+        }
+
+        if all_match {
+            common.push(lists[0][read[0]]);
+            for read in &mut read {
+                *read += 1;
+            }
+        }
+    }
+
+    for ((list, &read), &write) in lists.iter_mut().zip(&read).zip(&write) {
+        list.copy_within(read.., write);
+        list.truncate(write + list.len() - read);
+    }
+
+    common
 }
 
 fn parse_i32_lossy(token: &str, malformed_tokens: &mut Vec<String>) -> i32 {

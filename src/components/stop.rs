@@ -132,8 +132,12 @@ impl Component for StopComponent {
                 _ => now_minutes,
             };
 
+            // Holidays and similar dates swap in another weekday's timetable,
+            // or take the route out of service altogether.
+            let route_weekday_today = route.effective_weekday(today, weekday);
+
             for (route_weekday, times) in route.weekdays_times.iter() {
-                if !route_weekday.is_nth_day(weekday) {
+                if !route_weekday_today.is_some_and(|day| route_weekday.is_nth_day(day)) {
                     continue;
                 }
 
