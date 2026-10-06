@@ -15,6 +15,9 @@ pub fn use_departures(radio: &Radio<Data, DataChannel>) {
     let mut departures = radio.slice_mut(DataChannel::DeparturesUpdate, |s| {
         &mut s.transit_data.departures
     });
+    let mut fetched_at = radio.slice_mut(DataChannel::DeparturesUpdate, |s| {
+        &mut s.departures_fetched_at
+    });
 
     use_hook(|| {
         spawn(async move {
@@ -26,7 +29,10 @@ pub fn use_departures(radio: &Radio<Data, DataChannel>) {
                 }
 
                 if stops_radius.read().is_empty() {
-                    next_update += Duration::from_millis(10);
+                    // Stops are still downloading/parsing. Back off rather than
+                    // re-checking every 10ms, which pegged the UI executor at
+                    // ~100 wake-ups per second for the whole startup window.
+                    next_update += Duration::from_millis(500);
                     continue;
                 }
 
@@ -45,7 +51,10 @@ pub fn use_departures(radio: &Radio<Data, DataChannel>) {
                 };
 
                 next_update = Utc::now() + Duration::from_secs(stops_departures.1.into());
-                *departures.write() = stops_departures.0.clone();
+                // Written before the departures themselves; no await separates
+                // them, so no render can observe one without the other.
+                *fetched_at.write() = Utc::now().timestamp();
+                *departures.write() = stops_departures.0;
 
                 // println!("Departures: {:?}", stops_departures.0);
 

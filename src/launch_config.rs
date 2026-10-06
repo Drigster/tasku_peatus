@@ -2,11 +2,17 @@ use freya::{
     prelude::*,
     radio::{RadioChannel, RadioStation},
 };
+use geo::{Distance, Haversine, Point};
 use smol::stream::StreamExt;
 
 use crate::{app::MyApp, utils::transit::TransitData};
 
 pub static APP_DIR_NAME: &str = "tasku_peatus";
+
+/// Minimum movement before a new fix is published. Every published location
+/// update recomputes the in-radius stop list, and Android delivers fixes as
+/// often as once per second, so near-identical fixes are dropped.
+const LOCATION_UPDATE_MIN_METERS: f64 = 10.0;
 
 #[allow(dead_code)]
 pub fn build_launch_config() -> freya::prelude::LaunchConfig {
@@ -21,9 +27,24 @@ pub fn build_launch_config() -> freya::prelude::LaunchConfig {
             while let Some(channel_data) = state_rx.next().await {
                 match channel_data {
                     ChannelSend::LocationUpdate(location) => {
-                        radio_station
-                            .write_channel(DataChannel::LocationUpdate)
-                            .location = Some(location);
+                        let has_moved = {
+                            let data = radio_station.read();
+                            match data.location {
+                                None => true,
+                                Some(previous) => {
+                                    Haversine.distance(
+                                        Point::new(previous.1, previous.0),
+                                        Point::new(location.1, location.0),
+                                    ) >= LOCATION_UPDATE_MIN_METERS
+                                }
+                            }
+                        };
+
+                        if has_moved {
+                            radio_station
+                                .write_channel(DataChannel::LocationUpdate)
+                                .location = Some(location);
+                        }
                     }
                     ChannelSend::LocationEnabledUpdate(enabled) => {
                         radio_station
@@ -41,7 +62,7 @@ pub fn build_launch_config() -> freya::prelude::LaunchConfig {
         )
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum AppState {
     LocationDisabled,
@@ -57,6 +78,13 @@ pub struct Data {
     pub location: Option<(f64, f64)>,
 
     pub state: Option<AppState>,
+
+    /// Epoch seconds, republished once per second by `use_ticker`. Countdowns
+    /// derive their remaining time from this rather than each keeping a timer.
+    pub now: i64,
+    /// Epoch seconds at which `transit_data.departures` was fetched, so a row
+    /// can tell how much of its `until` has already elapsed.
+    pub departures_fetched_at: i64,
 
     pub state_tx: Option<futures_channel::mpsc::UnboundedSender<ChannelSend>>,
 }
@@ -75,6 +103,7 @@ pub enum DataChannel {
     ErrorStateUpdate,
     RoutesUpdate,
     StateUpdate,
+    TickUpdate,
 }
 
 impl RadioChannel<Data> for DataChannel {}

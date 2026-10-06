@@ -48,3 +48,9 @@ crate-type = ["cdylib", "rlib"]
 [[bin]]
 path = "src/main.rs"
 name = "tasku_peatus"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

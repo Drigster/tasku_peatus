@@ -2,7 +2,7 @@ use blocking::unblock;
 use chrono::Utc;
 use revision::revisioned;
 use serde::Serialize;
-use std::{collections::HashMap, vec};
+use std::collections::HashMap;
 
 use crate::utils::{text_utils::parse_csv_line, transit::parsers::routes::RouteType};
 
@@ -19,6 +19,28 @@ pub struct Departure {
 //                            siri_id
 pub type Departures = HashMap<String, HashMap<RouteType, Vec<Departure>>>;
 
+/// Fetches one chunk of stops. Separate so the chunks can be in flight at the
+/// same time instead of one blocking round trip after another.
+async fn fetch_chunk(chunk: Vec<String>) -> Result<(Vec<String>, String), String> {
+    unblock(move || {
+        let url = format!(
+            "https://transport.tallinn.ee/siri-stop-departures.php?stopid={}&time={}",
+            chunk.join(","),
+            Utc::now().timestamp_millis()
+        );
+        log::debug!("Fetching departures: {url}");
+
+        let mut response = ureq::get(&url).call().map_err(|e| e.to_string())?;
+        let body = response
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| e.to_string())?;
+
+        Ok((chunk, body))
+    })
+    .await
+}
+
 pub async fn get_departures(
     siri_ids: Vec<String>,
 ) -> Result<(Departures, u32), Box<dyn std::error::Error>> {
@@ -26,32 +48,26 @@ pub async fn get_departures(
         return Err("No stops".into());
     }
 
+    // `unblock` schedules onto the thread pool as soon as the task is created,
+    // so starting every chunk before awaiting any of them puts the requests in
+    // flight together. With ~20 stops in radius this turns four serialized
+    // round trips per refresh into one.
+    let fetches: Vec<_> = siri_ids
+        .chunks(5)
+        .map(|chunk| fetch_chunk(chunk.to_vec()))
+        .collect();
+
+    let mut responses = Vec::with_capacity(fetches.len());
+    for fetch in fetches {
+        responses.push(fetch.await?);
+    }
+
     let departures = unblock(move || -> Result<(Departures, u32), String> {
         let mut departures: Departures = HashMap::new();
 
         let mut next_update: u32 = u32::MAX;
 
-        for chunk in siri_ids.chunks(5) {
-            println!(
-                "https://transport.tallinn.ee/siri-stop-departures.php?stopid={}&time={}",
-                chunk.join(","),
-                Utc::now().timestamp_millis()
-            );
-            let mut response = ureq::get(
-                format!(
-                    "https://transport.tallinn.ee/siri-stop-departures.php?stopid={}&time={}",
-                    chunk.join(","),
-                    Utc::now().timestamp_millis()
-                )
-                .as_str(),
-            )
-            .call()
-            .map_err(|e| e.to_string())?;
-
-            let data = response
-                .body_mut()
-                .read_to_string()
-                .map_err(|e| e.to_string())?;
+        for (chunk, data) in &responses {
             let data = data.trim_start_matches('\u{feff}');
 
             if data.is_empty() || data.starts_with("ERROR") {
@@ -121,38 +137,33 @@ pub async fn get_departures(
                 let until = parts.get(until_index).unwrap().parse::<u32>().unwrap();
                 let extra_data = parts
                     .get(extra_data_index)
-                    .unwrap_or(&"".to_string())
+                    .map(String::as_str)
+                    .unwrap_or("")
                     .to_string();
 
                 if next_update > until {
                     next_update = until;
                 }
 
-                let current_departures = departures
-                    .entry(current_stop_siri_id.clone().unwrap())
-                    .or_default();
-
-                match current_departures.get_mut(&departure_type) {
-                    Some(departures) => {
-                        departures.push(Departure {
-                            expected_time,
-                            scheduled_time,
-                            destination_name: direction.clone(),
-                            until,
-                            extra_data: Some(extra_data),
-                        });
-                    }
-                    None => {
-                        let departures = vec![Departure {
-                            expected_time,
-                            scheduled_time,
-                            destination_name: direction.clone(),
-                            until,
-                            extra_data: Some(extra_data),
-                        }];
-                        current_departures.insert(departure_type, departures);
-                    }
+                // Allocate the key only on first insert, rather than cloning
+                // the siri id for every departure row.
+                let siri_id = current_stop_siri_id.as_deref().unwrap();
+                if !departures.contains_key(siri_id) {
+                    departures.insert(siri_id.to_string(), HashMap::new());
                 }
+
+                departures
+                    .get_mut(siri_id)
+                    .unwrap()
+                    .entry(departure_type)
+                    .or_default()
+                    .push(Departure {
+                        expected_time,
+                        scheduled_time,
+                        destination_name: direction,
+                        until,
+                        extra_data: Some(extra_data),
+                    });
             }
         }
 

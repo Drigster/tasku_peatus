@@ -4,11 +4,8 @@ use revision::{from_slice, revisioned, to_vec};
 use serde::Serialize;
 use std::{collections::HashMap, fs, path::PathBuf};
 
-use crate::{
-    launch_config::APP_DIR_NAME,
-    utils::{
-        preferences::get_cache_dir, text_utils::parse_csv_line, transit::parsers::routes::Route,
-    },
+use crate::utils::{
+    preferences::app_cache_dir, text_utils::parse_csv_line, transit::parsers::routes::Route,
 };
 
 static STOPS_URL: &str = "https://transport.tallinn.ee/data/stops.txt";
@@ -42,7 +39,9 @@ pub async fn get_stops() -> Result<HashMap<String, Stop>, Box<dyn std::error::Er
         },
         Err(_) => DateTime::<Utc>::MIN_UTC,
     };
-    let target_last_modified = get_last_modified_version();
+    // `get_last_modified_version` is a synchronous `ureq::head()`; running it
+    // directly in the async body stalled the UI task at startup.
+    let target_last_modified = blocking::unblock(get_last_modified_version).await;
     println!("Current stops last modified: {current_last_modified:?}");
     println!("Target stops last modified: {target_last_modified:?}");
     if get_stops_file_path().exists() && current_last_modified >= target_last_modified {
@@ -92,27 +91,27 @@ pub async fn get_stops() -> Result<HashMap<String, Stop>, Box<dyn std::error::Er
 }
 
 pub fn get_stops_in_radius(
-    stops: HashMap<String, Stop>,
+    stops: &HashMap<String, Stop>,
     center_lat: f64,
     center_lon: f64,
     radius_meters: f64,
 ) -> Vec<StopRadius> {
     let mut stops_radius: Vec<StopRadius> = Vec::new();
 
-    for (_, stop) in stops.into_iter() {
+    // Loop-invariant, and `meters_to_degrees_lon` costs a cos() per call.
+    let lat_delta = meters_to_degrees_lat(radius_meters + 5.0);
+    let lon_delta = meters_to_degrees_lon(radius_meters + 5.0, center_lat);
+    let center = Point::new(center_lon, center_lat);
+
+    for stop in stops.values() {
         if stop.stop_id.trim().is_empty() {
             continue;
         };
-        let lat_delta = meters_to_degrees_lat(radius_meters + 5.0);
-        let lon_delta = meters_to_degrees_lon(radius_meters + 5.0, center_lat);
 
         if (stop.lat - center_lat).abs() <= lat_delta && (stop.lon - center_lon).abs() <= lon_delta
         //&& stop.transports.is_empty() == false
         {
-            let distance = Haversine.distance(
-                Point::new(center_lon, center_lat),
-                Point::new(stop.lon, stop.lat),
-            );
+            let distance = Haversine.distance(center, Point::new(stop.lon, stop.lat));
 
             if distance > radius_meters {
                 continue;
@@ -232,19 +231,11 @@ pub fn get_last_modified_version() -> DateTime<Utc> {
 }
 
 pub fn get_stops_file_path() -> PathBuf {
-    let cache_dir = get_cache_dir().unwrap().join(APP_DIR_NAME);
-    if !cache_dir.exists() {
-        std::fs::create_dir_all(&cache_dir).unwrap();
-    }
-    cache_dir.join("stops.dat")
+    app_cache_dir().join("stops.dat")
 }
 
 pub fn get_stops_last_modified_file_path() -> PathBuf {
-    let cache_dir = get_cache_dir().unwrap().join(APP_DIR_NAME);
-    if !cache_dir.exists() {
-        std::fs::create_dir_all(&cache_dir).unwrap();
-    }
-    cache_dir.join("stops_last_modified.dat")
+    app_cache_dir().join("stops_last_modified.dat")
 }
 
 fn meters_to_degrees_lat(meters: f64) -> f64 {
