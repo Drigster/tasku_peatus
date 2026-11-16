@@ -93,16 +93,22 @@ pub fn use_location(radio: &Radio<Data, DataChannel>) {
             {
                 use crate::launch_config::ChannelSend;
                 use crate::utils::geoclue::start_location_updates;
+                use smol::stream::StreamExt;
 
-                match start_location_updates(move |(lat, lng, accuracy)| {
-                    log::debug!("Location changed: lat={lat}, lng={lng}, accuracy={accuracy}");
-                    let _ = state_tx.unbounded_send(ChannelSend::LocationUpdate((lat, lng)));
-                })
-                .await
-                {
-                    Ok(callback_ptr) => {
+                match start_location_updates().await {
+                    Ok(updates) => {
                         *is_location_enabled.write() = true;
-                        log::info!("Location updates started: {callback_ptr:?}");
+                        log::info!("Location updates started");
+
+                        let mut updates = std::pin::pin!(updates);
+                        while let Some((lat, lng, accuracy)) = updates.next().await {
+                            log::debug!(
+                                "Location changed: lat={lat}, lng={lng}, accuracy={accuracy}"
+                            );
+                            let _ =
+                                state_tx.unbounded_send(ChannelSend::LocationUpdate((lat, lng)));
+                        }
+                        log::warn!("GeoClue position stream ended");
                     }
                     Err(e) => {
                         log::error!("Error starting location updates: {e}");

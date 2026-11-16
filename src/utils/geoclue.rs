@@ -1,7 +1,21 @@
-use smol::stream::StreamExt;
+//! Location through GeoClue 1, as shipped on Sailfish OS (session bus).
+
+use smol::stream::{self, Stream, StreamExt};
 use zbus::{Connection, OwnedObjectPath, proxy};
 
-const MASTER_SERVICE: &str = "org.freedesktop.Geoclue.Master";
+const ACCURACY_DETAILED: i32 = 6;
+const MIN_UPDATE_SECONDS: i32 = 2;
+const ALL_RESOURCES: i32 = 1023;
+const FIELDS_LAT_LON: i32 = 0b011;
+
+#[proxy(
+    interface = "org.freedesktop.Geoclue.Master",
+    default_service = "org.freedesktop.Geoclue.Master",
+    default_path = "/org/freedesktop/Geoclue/Master"
+)]
+trait Master {
+    fn create(&self) -> zbus::Result<OwnedObjectPath>;
+}
 
 #[proxy(
     interface = "org.freedesktop.Geoclue.MasterClient",
@@ -10,10 +24,10 @@ const MASTER_SERVICE: &str = "org.freedesktop.Geoclue.Master";
 trait MasterClient {
     fn set_requirements(
         &self,
-        accuracy: i32, // 6 = detailed
+        accuracy: i32,
         time: i32,
         require_updates: bool,
-        allowed_resources: i32, // 1023 = all
+        allowed_resources: i32,
     ) -> zbus::Result<()>;
     fn position_start(&self) -> zbus::Result<()>;
 }
@@ -23,16 +37,9 @@ trait MasterClient {
     default_service = "org.freedesktop.Geoclue.Master"
 )]
 trait Position {
-    fn get_position(
-        &self,
-    ) -> zbus::Result<(
-        i32,             // fields bitmask: 1=lat, 2=lon, 4=alt
-        i32,             // timestamp (epoch)
-        f64,             // latitude
-        f64,             // longitude
-        f64,             // altitude
-        (i32, f64, f64), // accuracy: (level, horizontal, vertical)
-    )>;
+    /// Returns (fields, timestamp, latitude, longitude, altitude, (level, horizontal, vertical)).
+    #[allow(clippy::type_complexity)]
+    fn get_position(&self) -> zbus::Result<(i32, i32, f64, f64, f64, (i32, f64, f64))>;
 
     #[zbus(signal)]
     fn position_changed(
@@ -46,83 +53,47 @@ trait Position {
     ) -> zbus::Result<()>;
 }
 
-#[allow(dead_code)]
-pub async fn get_location() -> Result<(f64, f64), Box<dyn std::error::Error>> {
-    log::debug!("Get location");
-    // Session bus, run as defaultuser
-    let conn = Connection::session().await?;
-    log::debug!("Connection: {:?}", conn);
-
-    // Activate the master (this creates/keeps client0 alive)
-    let client_body = conn
-        .call_method(
-            Some(MASTER_SERVICE),
-            "/org/freedesktop/Geoclue/Master",
-            Some("org.freedesktop.Geoclue.Master"),
-            "Create",
-            &(),
-        )
-        .await?
-        .body();
-
-    let client_path: OwnedObjectPath = client_body.deserialize()?;
-
-    let client = MasterClientProxy::new(&conn, client_path.clone()).await?;
-    log::debug!("Client: {:?}", client);
-    let requirments = client.set_requirements(6, 0, true, 1023).await;
-
-    log::debug!("Requirements: {requirments:?}");
-
-    let pos_start = client.position_start().await;
-
-    log::debug!("Position start: {pos_start:?}");
-
-    let pos = PositionProxy::new(&conn, client_path).await?;
-    let position = pos.get_position().await?;
-
-    log::debug!("Position: {:?}", position);
-
-    Ok((0.0, 0.0))
+fn to_fix(
+    fields: i32,
+    latitude: f64,
+    longitude: f64,
+    accuracy: (i32, f64, f64),
+) -> Option<(f64, f64, f32)> {
+    (fields & FIELDS_LAT_LON == FIELDS_LAT_LON).then_some((latitude, longitude, accuracy.1 as f32))
 }
 
-pub async fn start_location_updates<F>(callback: F) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: Fn((f64, f64, f32)) + Send + Sync + 'static,
-{
-    // Session bus, run as defaultuser
+/// Sets up a GeoClue client and returns its fixes as `(latitude, longitude, accuracy)`.
+///
+/// Returns as soon as the client is running, so the caller can mark location as
+/// available before the first fix. The current position, if known, is yielded first.
+pub async fn start_location_updates()
+-> Result<impl Stream<Item = (f64, f64, f32)>, Box<dyn std::error::Error>> {
     let conn = Connection::session().await?;
 
-    // Activate the master (this creates/keeps client0 alive)
-    let client_body = conn
-        .call_method(
-            Some(MASTER_SERVICE),
-            "/org/freedesktop/Geoclue/Master",
-            Some("org.freedesktop.Geoclue.Master"),
-            "Create",
-            &(),
-        )
-        .await?
-        .body();
-
-    let client_path: OwnedObjectPath = client_body.deserialize()?;
-
+    let client_path = MasterProxy::new(&conn).await?.create().await?;
     let client = MasterClientProxy::new(&conn, client_path.clone()).await?;
-    log::debug!("Client: {:?}", client);
+    client
+        .set_requirements(ACCURACY_DETAILED, MIN_UPDATE_SECONDS, true, ALL_RESOURCES)
+        .await?;
 
-    let requirments = client.set_requirements(6, 2, true, 1023).await;
-    log::debug!("Requirements: {requirments:?}");
+    let position = PositionProxy::new(&conn, client_path).await?;
+    let changes = position.receive_position_changed().await?;
+    client.position_start().await?;
 
-    let pos = PositionProxy::new(&conn, client_path).await?;
-
-    let pos_start = client.position_start().await;
-    log::debug!("Position start: {pos_start:?}");
-
-    let mut updates = pos.receive_position_changed().await?;
-    while let Some(signal) = updates.next().await {
-        let args = signal.args()?;
-        if args.fields & 0b011 == 0b011 {
-            callback((args.latitude, args.longitude, args.accuracy.1 as f32));
+    let current = match position.get_position().await {
+        Ok((fields, _, latitude, longitude, _, accuracy)) => {
+            to_fix(fields, latitude, longitude, accuracy)
         }
-    }
-    Ok(())
+        Err(e) => {
+            log::debug!("No current GeoClue position: {e}");
+            None
+        }
+    };
+
+    let changes = changes.filter_map(|signal| {
+        let args = signal.args().ok()?;
+        to_fix(args.fields, args.latitude, args.longitude, args.accuracy)
+    });
+
+    Ok(stream::iter(current).chain(changes))
 }
