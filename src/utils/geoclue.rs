@@ -1,7 +1,15 @@
 //! Location through GeoClue 1, as shipped on Sailfish OS (session bus).
 
+use std::time::Duration;
+
 use smol::stream::{self, Stream, StreamExt};
 use zbus::{Connection, OwnedObjectPath, proxy};
+
+/// Written by Sailfish's location settings and the top menu toggle.
+const LOCATION_CONFIG: &str = "/etc/location/location.conf";
+/// The settings app replaces the file rather than editing it, so it is polled
+/// instead of watched.
+const ENABLED_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Accept any provider. Requiring "detailed" (6) limits GeoClue to GPS, which
 /// can take minutes for a first fix; with "none" it starts from network
@@ -99,4 +107,54 @@ pub async fn start_location_updates()
     });
 
     Ok(stream::iter(current).chain(changes))
+}
+
+/// Reads `enabled` from the `[location]` section. A missing file or key counts
+/// as enabled, so non-Sailfish systems don't show location as disabled.
+fn read_location_enabled() -> bool {
+    std::fs::read_to_string(LOCATION_CONFIG).map_or(true, |config| parse_location_enabled(&config))
+}
+
+fn parse_location_enabled(config: &str) -> bool {
+    let mut in_location = false;
+    for line in config.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_location = line == "[location]";
+        } else if in_location && let Some(value) = line.strip_prefix("enabled=") {
+            return value == "true";
+        }
+    }
+    true
+}
+
+/// Yields whether location is switched on, immediately and then on every change.
+///
+/// GeoClue gives no dependable signal for this: the master reports no provider
+/// at every startup, and while location is off it just stops sending positions.
+pub fn location_enabled_changes() -> impl Stream<Item = bool> {
+    let mut last = None;
+    stream::once(())
+        .chain(smol::Timer::interval(ENABLED_POLL_INTERVAL).map(|_| ()))
+        .filter_map(move |()| {
+            let enabled = read_location_enabled();
+            (last != Some(enabled)).then(|| {
+                last = Some(enabled);
+                enabled
+            })
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_location_enabled;
+
+    #[test]
+    fn reads_enabled_from_location_section() {
+        assert!(!parse_location_enabled(
+            "[location]\nagreement_accepted=false\nenabled=false\ngps\\enabled=true\n"
+        ));
+        assert!(parse_location_enabled("[location]\nenabled=true\n"));
+        assert!(parse_location_enabled("[other]\nenabled=false\n"));
+        assert!(parse_location_enabled(""));
+    }
 }

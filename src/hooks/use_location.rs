@@ -3,6 +3,7 @@ use freya::{prelude::*, radio::Radio};
 use crate::launch_config::{AppState, Data, DataChannel};
 
 pub fn use_location(radio: &Radio<Data, DataChannel>) {
+    #[cfg_attr(feature = "geoclue", allow(unused_mut))]
     let mut is_location_enabled = radio.slice_mut(DataChannel::LocationEnabledUpdate, |s| {
         &mut s.is_location_enabled
     });
@@ -54,6 +55,24 @@ pub fn use_location(radio: &Radio<Data, DataChannel>) {
         });
     }
 
+    #[cfg(feature = "geoclue")]
+    {
+        let state_tx = state_tx.clone();
+        use_hook(move || {
+            spawn(async move {
+                use crate::launch_config::ChannelSend;
+                use crate::utils::geoclue::location_enabled_changes;
+                use smol::stream::StreamExt;
+
+                let mut changes = std::pin::pin!(location_enabled_changes());
+                while let Some(enabled) = changes.next().await {
+                    log::info!("Location enabled changed: {enabled}");
+                    let _ = state_tx.unbounded_send(ChannelSend::LocationEnabledUpdate(enabled));
+                }
+            });
+        });
+    }
+
     use_hook(|| {
         spawn(async move {
             #[cfg(target_os = "android")]
@@ -97,7 +116,6 @@ pub fn use_location(radio: &Radio<Data, DataChannel>) {
 
                 match start_location_updates().await {
                     Ok(updates) => {
-                        *is_location_enabled.write() = true;
                         log::info!("Location updates started");
 
                         let mut updates = std::pin::pin!(updates);
