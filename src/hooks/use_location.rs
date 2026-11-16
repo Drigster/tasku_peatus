@@ -6,6 +6,7 @@ pub fn use_location(radio: &Radio<Data, DataChannel>) {
     let mut is_location_enabled = radio.slice_mut(DataChannel::LocationEnabledUpdate, |s| {
         &mut s.is_location_enabled
     });
+    #[cfg_attr(feature = "geoclue", allow(unused_mut))]
     let mut location = radio.slice_mut(DataChannel::LocationUpdate, |s| &mut s.location);
     #[allow(unused)]
     let state_tx = radio.read().state_tx.clone().unwrap();
@@ -16,10 +17,10 @@ pub fn use_location(radio: &Radio<Data, DataChannel>) {
     let is_location_enabled_clone = is_location_enabled.clone();
     let location_clone = location.clone();
     use_side_effect(move || {
-        if is_loading() == false {
+        if !is_loading() {
             // Guarded write: this effect reruns on every location update, and an
             // unconditional write dirties every `StateUpdate` subscriber.
-            let new_state = if *is_location_enabled_clone.read() == false {
+            let new_state = if !*is_location_enabled_clone.read() {
                 Some(AppState::LocationDisabled)
             } else if location_clone.read().is_none() {
                 Some(AppState::WitingForLocation)

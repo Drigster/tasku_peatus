@@ -5,7 +5,7 @@ use freya::{
 use geo::{Distance, Haversine, Point};
 use smol::stream::StreamExt;
 
-use crate::{app::MyApp, utils::transit::TransitData};
+use crate::{app::app, utils::transit::TransitData};
 
 pub static APP_DIR_NAME: &str = "tasku_peatus";
 
@@ -23,7 +23,7 @@ pub fn build_launch_config() -> freya::prelude::LaunchConfig {
     radio_station.write_channel(DataChannel::NoUpdate).state_tx = Some(state_tx.clone());
 
     LaunchConfig::new()
-        .with_future(move |_| async move {
+        .with_task(move |_| async move {
             while let Some(channel_data) = state_rx.next().await {
                 match channel_data {
                     ChannelSend::LocationUpdate(location) => {
@@ -55,7 +55,8 @@ pub fn build_launch_config() -> freya::prelude::LaunchConfig {
             }
         })
         .with_window(
-            WindowConfig::new_app(MyApp { radio_station })
+            WindowConfig::new(app)
+                .with_root_context(radio_station)
                 .with_size(420.0, 900.0)
                 .with_custom_scale_factor(if cfg!(feature = "scaled") { 2.375 } else { 1.0 })
                 .with_decorations(false),
@@ -90,7 +91,7 @@ pub struct Data {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
-#[allow(dead_code)]
+#[allow(dead_code, clippy::enum_variant_names)]
 pub enum DataChannel {
     NoUpdate,
     StopsUpdate,

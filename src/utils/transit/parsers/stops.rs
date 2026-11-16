@@ -125,7 +125,7 @@ pub fn get_stops_in_radius(
         }
     }
 
-    stops_radius.sort_by(|a, b| a.distance.cmp(&b.distance));
+    stops_radius.sort_by_key(|stop| stop.distance);
 
     stops_radius
 }

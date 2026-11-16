@@ -1,5 +1,5 @@
 use smol::stream::StreamExt;
-use zbus::{Connection, proxy, zvariant};
+use zbus::{Connection, OwnedObjectPath, proxy};
 
 const MASTER_SERVICE: &str = "org.freedesktop.Geoclue.Master";
 
@@ -46,6 +46,7 @@ trait Position {
     ) -> zbus::Result<()>;
 }
 
+#[allow(dead_code)]
 pub async fn get_location() -> Result<(f64, f64), Box<dyn std::error::Error>> {
     println!("Get location");
     // Session bus, run as defaultuser
@@ -64,7 +65,7 @@ pub async fn get_location() -> Result<(f64, f64), Box<dyn std::error::Error>> {
         .await?
         .body();
 
-    let client_path: zvariant::OwnedObjectPath = client_body.deserialize()?;
+    let client_path: OwnedObjectPath = client_body.deserialize()?;
 
     let client = MasterClientProxy::new(&conn, client_path.clone()).await?;
     println!("Client: {:?}", client);
@@ -103,7 +104,7 @@ where
         .await?
         .body();
 
-    let client_path: zvariant::OwnedObjectPath = client_body.deserialize()?;
+    let client_path: OwnedObjectPath = client_body.deserialize()?;
 
     let client = MasterClientProxy::new(&conn, client_path.clone()).await?;
     println!("Client: {:?}", client);

@@ -428,10 +428,7 @@ fn parse_routes(data: String) -> ParsedRoutes {
         let operator = parts[operator_index].clone();
         let validity_periods = parts[validity_periods_index]
             .split(",")
-            .filter_map(|e| match e.parse::<u64>() {
-                Ok(value) => Some(value),
-                Err(_) => None,
-            })
+            .filter_map(|e| e.parse::<u64>().ok())
             .collect();
         let special_dates = parse_special_dates_refs(&parts[special_dates_index]);
         let route_tag = parts[route_tag_index].clone();
@@ -595,10 +592,8 @@ fn convert_route(parsed: ParsedRoutes) -> Routes {
             .unwrap_or(&route.route_name)
             .to_string();
         let is_night = route.route_name.starts_with("ÖÖ");
-        let special_weekdays = resolve_special_weekdays(
-            &route.special_dates,
-            &parsed.special_date_groups,
-        );
+        let special_weekdays =
+            resolve_special_weekdays(&route.special_dates, &parsed.special_date_groups);
 
         let trips: Vec<Trip> = match route.times {
             Some(ref times) => times
@@ -671,10 +666,7 @@ fn convert_route(parsed: ParsedRoutes) -> Routes {
                                     Some(day) => Weekdays::Other(day as u8),
                                     None => continue,
                                 };
-                                weekdays_times
-                                    .entry(weekday)
-                                    .or_default()
-                                    .push(entry);
+                                weekdays_times.entry(weekday).or_default().push(entry);
                             }
                         }
                     }

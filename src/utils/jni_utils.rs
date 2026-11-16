@@ -2,8 +2,8 @@ use blocking::unblock;
 use std::collections::HashMap;
 
 use jni::{
-    JNIEnv, JavaVM,
-    objects::{JClass, JObject, JValue},
+    Env, EnvUnowned, JavaVM, jni_sig, jni_str,
+    objects::{JClass, JFloatArray, JObject, JString, JValue},
 };
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -11,149 +11,147 @@ use std::sync::{LazyLock, Mutex};
 
 type LocationUpdatesCallback = Box<dyn Fn((f64, f64, f32)) + Send + Sync>;
 type LocationEnabledCallback = Box<dyn Fn(bool) + Send + Sync>;
+type LocationResultCallback = Box<dyn FnOnce(Option<(f64, f64, f32)>)>;
 
 static PERMISSION_REQUEST_ID: AtomicI64 = AtomicI64::new(1);
 static PERMISSION_REQUESTS: LazyLock<Mutex<HashMap<i64, std::sync::mpsc::Sender<bool>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn clear_pending_java_exception(env: &mut JNIEnv) {
-    if let Ok(true) = env.exception_check() {
-        let _ = env.exception_describe();
-        let _ = env.exception_clear();
-    }
+/// Attaches the current thread to the JVM and runs `f` with the Android
+/// `Context`. A pending Java exception is cleared when `f` fails, so the next
+/// JNI call on this thread doesn't abort.
+fn with_android_env<T>(
+    f: impl FnOnce(&mut Env, &JObject) -> jni::errors::Result<T>,
+) -> Result<T, Box<dyn std::error::Error>> {
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { JavaVM::from_raw(ctx.vm().cast()) };
+
+    vm.attach_current_thread(|env| {
+        let context = unsafe { JObject::from_raw(env, ctx.context().cast()) };
+        let result = f(env, &context);
+        if result.is_err() && env.exception_check() {
+            env.exception_describe();
+            env.exception_clear();
+        }
+        result
+    })
+    .map_err(Into::into)
 }
 
-pub fn get_cache_dir_android() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let ctx = ndk_context::android_context();
-    let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
-
-    let mut env = vm.attach_current_thread()?;
-
-    let file_obj = env
+/// App classes aren't visible to `FindClass` from a native thread, so they are
+/// loaded through the context's class loader.
+fn load_app_class<'local>(
+    env: &mut Env<'local>,
+    context: &JObject,
+    name: &str,
+) -> jni::errors::Result<JClass<'local>> {
+    let class_loader = env
         .call_method(
-            unsafe { JObject::from_raw(ctx.context().cast()) },
-            "getCacheDir",
-            "()Ljava/io/File;",
+            context,
+            jni_str!("getClassLoader"),
+            jni_sig!("()Ljava/lang/ClassLoader;"),
             &[],
         )?
         .l()?;
-
-    let absolute_path_obj = env
-        .call_method(file_obj, "getAbsolutePath", "()Ljava/lang/String;", &[])?
+    let class_name = env.new_string(name)?;
+    let class = env
+        .call_method(
+            &class_loader,
+            jni_str!("loadClass"),
+            jni_sig!("(Ljava/lang/String;)Ljava/lang/Class;"),
+            &[JValue::Object(&class_name)],
+        )?
         .l()?;
+    env.cast_local::<JClass>(class)
+}
 
-    let absolute_path: String = env.get_string(&absolute_path_obj.into())?.into();
+/// Calls a `static void method(Context, long)` on one of the app's helper classes.
+fn call_helper(
+    class_name: &str,
+    method: &'static jni::strings::JNIStr,
+    arg: i64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    with_android_env(|env, context| {
+        let class = load_app_class(env, context, class_name)?;
+        env.call_static_method(
+            &class,
+            method,
+            jni_sig!("(Landroid/content/Context;J)V"),
+            &[JValue::Object(context), JValue::Long(arg)],
+        )?;
+        Ok(())
+    })
+}
 
-    Ok(PathBuf::from(absolute_path))
+pub fn get_cache_dir_android() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    with_android_env(|env, context| {
+        let file = env
+            .call_method(
+                context,
+                jni_str!("getCacheDir"),
+                jni_sig!("()Ljava/io/File;"),
+                &[],
+            )?
+            .l()?;
+        let path = env
+            .call_method(
+                &file,
+                jni_str!("getAbsolutePath"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )?
+            .l()?;
+        let path = env.cast_local::<JString>(path)?;
+        let path: String = path.mutf8_chars(env)?.into();
+        Ok(PathBuf::from(path))
+    })
 }
 
 pub fn get_bar_sizes() -> Result<(f32, f32, f32, f32), Box<dyn std::error::Error>> {
-    let ctx = ndk_context::android_context();
-    let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
-
-    let mut env = vm.attach_current_thread()?;
-    let context = unsafe { JObject::from_raw(ctx.context().cast()) };
-
-    let helper_class = match (|| -> Result<JClass, jni::errors::Error> {
-        let class_loader = env
-            .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
-            .l()?;
-        let helper_class_name = env.new_string("dev.drigster.taskupeatus.AndroidUiHelper")?;
-        let helper_class_obj = env
-            .call_method(
-                &class_loader,
-                "loadClass",
-                "(Ljava/lang/String;)Ljava/lang/Class;",
-                &[JValue::Object(&helper_class_name)],
+    with_android_env(|env, context| {
+        let class = load_app_class(env, context, "dev.drigster.taskupeatus.AndroidUiHelper")?;
+        let insets = env
+            .call_static_method(
+                &class,
+                jni_str!("getBarSizes"),
+                jni_sig!("(Landroid/content/Context;)[F"),
+                &[JValue::Object(context)],
             )?
             .l()?;
-        Ok(JClass::from(helper_class_obj))
-    })() {
-        Ok(class) => class,
-        Err(err) => {
-            println!("[Print] Error finding AndroidUiHelper: {:?}", err);
-            clear_pending_java_exception(&mut env);
+
+        if insets.is_null() {
             return Ok((0.0, 0.0, 0.0, 0.0));
         }
-    };
 
-    let insets_array = match env.call_static_method(
-        helper_class,
-        "getBarSizes",
-        "(Landroid/content/Context;)[F",
-        &[JValue::Object(&context)],
-    ) {
-        Ok(value) => value.l()?,
-        Err(err) => {
-            println!("[Print] Error calling getBarSizes: {:?}", err);
-            clear_pending_java_exception(&mut env);
+        let insets = env.cast_local::<JFloatArray>(insets)?;
+        if insets.len(env)? < 4 {
             return Ok((0.0, 0.0, 0.0, 0.0));
         }
-    };
 
-    if insets_array.is_null() {
-        return Ok((0.0, 0.0, 0.0, 0.0));
-    }
-
-    let insets_array = jni::objects::JFloatArray::from(insets_array);
-    let len = env.get_array_length(&insets_array)?;
-    if len < 4 {
-        return Ok((0.0, 0.0, 0.0, 0.0));
-    }
-
-    let mut values = [0.0_f32; 4];
-    env.get_float_array_region(&insets_array, 0, &mut values)?;
-
-    Ok((values[0], values[1], values[2], values[3]))
+        let mut values = [0.0_f32; 4];
+        insets.get_region(env, 0, &mut values)?;
+        Ok((values[0], values[1], values[2], values[3]))
+    })
 }
 
 pub async fn check_and_request_permissions() -> Result<bool, Box<dyn std::error::Error>> {
     let request_id = PERMISSION_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
     let (tx, rx) = std::sync::mpsc::channel::<bool>();
 
-    {
-        let mut requests = PERMISSION_REQUESTS
-            .lock()
-            .map_err(|_| "Permission requests lock poisoned")?;
-        requests.insert(request_id, tx);
-    }
+    PERMISSION_REQUESTS
+        .lock()
+        .map_err(|_| "Permission requests lock poisoned")?
+        .insert(request_id, tx);
 
-    let ctx = ndk_context::android_context();
-    let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
-    let mut env = vm.attach_current_thread()?;
-    let context = unsafe { JObject::from_raw(ctx.context().cast()) };
-
-    let setup_result: Result<(), jni::errors::Error> = (|| {
-        let class_loader = env
-            .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
-            .l()?;
-        let helper_class_name = env.new_string("dev.drigster.taskupeatus.RustPermissionHelper")?;
-        let helper_class_obj = env
-            .call_method(
-                &class_loader,
-                "loadClass",
-                "(Ljava/lang/String;)Ljava/lang/Class;",
-                &[JValue::Object(&helper_class_name)],
-            )?
-            .l()?;
-        let helper_class = JClass::from(helper_class_obj);
-
-        env.call_static_method(
-            helper_class,
-            "requestLocationPermission",
-            "(Landroid/content/Context;J)V",
-            &[JValue::Object(&context), JValue::Long(request_id)],
-        )?;
-
-        Ok(())
-    })();
-
-    if let Err(err) = setup_result {
-        clear_pending_java_exception(&mut env);
+    if let Err(err) = call_helper(
+        "dev.drigster.taskupeatus.RustPermissionHelper",
+        jni_str!("requestLocationPermission"),
+        request_id,
+    ) {
         if let Ok(mut requests) = PERMISSION_REQUESTS.lock() {
             requests.remove(&request_id);
         }
-        return Err(Box::new(err));
+        return Err(err);
     }
 
     let permission_result =
@@ -174,142 +172,75 @@ pub async fn check_and_request_permissions() -> Result<bool, Box<dyn std::error:
 }
 
 pub fn get_last_known_location() -> Result<(f64, f64), Box<dyn std::error::Error>> {
-    let ctx = ndk_context::android_context();
-    let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
-    let mut env = vm.attach_current_thread()?;
-
-    let location_service = env.new_string("location")?;
-    let location_manager = env
-        .call_method(
-            unsafe { JObject::from_raw(ctx.context().cast()) },
-            "getSystemService",
-            "(Ljava/lang/String;)Ljava/lang/Object;",
-            &[JValue::Object(&location_service)],
-        )?
-        .l()?;
-
-    // Get last known location from GPS provider
-    let provider = env.new_string("gps")?;
-    let location = env
-        .call_method(
-            &location_manager,
-            "getLastKnownLocation",
-            "(Ljava/lang/String;)Landroid/location/Location;",
-            &[JValue::Object(&provider)],
-        )?
-        .l()?;
-
-    if location.is_null() {
-        // Try network provider as fallback
-        let network_provider = env.new_string("network")?;
-        let network_location = env
+    let location = with_android_env(|env, context| {
+        let location_service = env.new_string("location")?;
+        let location_manager = env
             .call_method(
-                &location_manager,
-                "getLastKnownLocation",
-                "(Ljava/lang/String;)Landroid/location/Location;",
-                &[JValue::Object(&network_provider)],
+                context,
+                jni_str!("getSystemService"),
+                jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
+                &[JValue::Object(&location_service)],
             )?
             .l()?;
 
-        if network_location.is_null() {
-            return Err("No location available".into());
+        for provider in ["gps", "network"] {
+            let provider = env.new_string(provider)?;
+            let location = env
+                .call_method(
+                    &location_manager,
+                    jni_str!("getLastKnownLocation"),
+                    jni_sig!("(Ljava/lang/String;)Landroid/location/Location;"),
+                    &[JValue::Object(&provider)],
+                )?
+                .l()?;
+
+            if !location.is_null() {
+                let lat = env
+                    .call_method(&location, jni_str!("getLatitude"), jni_sig!("()D"), &[])?
+                    .d()?;
+                let lng = env
+                    .call_method(&location, jni_str!("getLongitude"), jni_sig!("()D"), &[])?
+                    .d()?;
+                return Ok(Some((lat, lng)));
+            }
         }
 
-        let lat = env
-            .call_method(&network_location, "getLatitude", "()D", &[])?
-            .d()?;
-        let lng = env
-            .call_method(&network_location, "getLongitude", "()D", &[])?
-            .d()?;
-        return Ok((lat, lng));
-    }
+        Ok(None)
+    })?;
 
-    let lat = env.call_method(&location, "getLatitude", "()D", &[])?.d()?;
-    let lng = env
-        .call_method(&location, "getLongitude", "()D", &[])?
-        .d()?;
-    Ok((lat, lng))
+    location.ok_or_else(|| "No location available".into())
 }
 
 pub fn start_location_enabled_updates<F>(callback: F) -> Result<i64, Box<dyn std::error::Error>>
 where
     F: Fn(bool) + Send + Sync + 'static,
 {
-    let ctx = ndk_context::android_context();
-    let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
-    let mut env = vm.attach_current_thread()?;
-    let context = unsafe { JObject::from_raw(ctx.context().cast()) };
-
     let callback_box: Box<LocationEnabledCallback> = Box::new(Box::new(callback));
     let callback_ptr = Box::into_raw(callback_box) as i64;
 
-    let setup_result: Result<(), jni::errors::Error> = (|| {
-        let class_loader = env
-            .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
-            .l()?;
-        let helper_class_name = env.new_string("dev.drigster.taskupeatus.RustLocationHelper")?;
-        let helper_class_obj = env
-            .call_method(
-                &class_loader,
-                "loadClass",
-                "(Ljava/lang/String;)Ljava/lang/Class;",
-                &[JValue::Object(&helper_class_name)],
-            )?
-            .l()?;
-        let helper_class = JClass::from(helper_class_obj);
-
-        env.call_static_method(
-            helper_class,
-            "startLocationEnabledUpdates",
-            "(Landroid/content/Context;J)V",
-            &[JValue::Object(&context), JValue::Long(callback_ptr)],
-        )?;
-
-        Ok(())
-    })();
-
-    if let Err(err) = setup_result {
-        clear_pending_java_exception(&mut env);
+    if let Err(err) = call_helper(
+        "dev.drigster.taskupeatus.RustLocationHelper",
+        jni_str!("startLocationEnabledUpdates"),
+        callback_ptr,
+    ) {
         unsafe {
             drop(Box::from_raw(callback_ptr as *mut LocationEnabledCallback));
         }
-        return Err(Box::new(err));
+        return Err(err);
     }
 
     Ok(callback_ptr)
 }
 
 // pub fn stop_location_enabled_updates(callback_ptr: i64) -> Result<(), Box<dyn std::error::Error>> {
-//     let ctx = ndk_context::android_context();
-//     let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
-//     let mut env = vm.attach_current_thread()?;
-//     let context = unsafe { JObject::from_raw(ctx.context().cast()) };
-
-//     let class_loader = env
-//         .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
-//         .l()?;
-//     let helper_class_name = env.new_string("dev.drigster.taskupeatus.RustLocationHelper")?;
-//     let helper_class_obj = env
-//         .call_method(
-//             &class_loader,
-//             "loadClass",
-//             "(Ljava/lang/String;)Ljava/lang/Class;",
-//             &[JValue::Object(&helper_class_name)],
-//         )?
-//         .l()?;
-//     let helper_class = JClass::from(helper_class_obj);
-
-//     env.call_static_method(
-//         helper_class,
-//         "stopLocationEnabledUpdates",
-//         "(Landroid/content/Context;J)V",
-//         &[JValue::Object(&context), JValue::Long(callback_ptr)],
+//     call_helper(
+//         "dev.drigster.taskupeatus.RustLocationHelper",
+//         jni_str!("stopLocationEnabledUpdates"),
+//         callback_ptr,
 //     )?;
-
 //     unsafe {
 //         drop(Box::from_raw(callback_ptr as *mut LocationEnabledCallback));
 //     }
-
 //     Ok(())
 // }
 
@@ -317,117 +248,66 @@ pub fn start_location_updates<F>(callback: F) -> Result<i64, Box<dyn std::error:
 where
     F: Fn((f64, f64, f32)) + Send + Sync + 'static,
 {
-    let ctx = ndk_context::android_context();
-    let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
-    let mut env = vm.attach_current_thread()?;
-    let context = unsafe { JObject::from_raw(ctx.context().cast()) };
-
     let callback_box: Box<LocationUpdatesCallback> = Box::new(Box::new(callback));
     let callback_ptr = Box::into_raw(callback_box) as i64;
 
-    let setup_result: Result<(), jni::errors::Error> = (|| {
-        let class_loader = env
-            .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
-            .l()?;
-        let helper_class_name = env.new_string("dev.drigster.taskupeatus.RustLocationHelper")?;
-        let helper_class_obj = env
-            .call_method(
-                &class_loader,
-                "loadClass",
-                "(Ljava/lang/String;)Ljava/lang/Class;",
-                &[JValue::Object(&helper_class_name)],
-            )?
-            .l()?;
-        let helper_class = JClass::from(helper_class_obj);
-
-        env.call_static_method(
-            helper_class,
-            "startLocationUpdates",
-            "(Landroid/content/Context;J)V",
-            &[JValue::Object(&context), JValue::Long(callback_ptr)],
-        )?;
-
-        Ok(())
-    })();
-
-    if let Err(err) = setup_result {
-        clear_pending_java_exception(&mut env);
+    if let Err(err) = call_helper(
+        "dev.drigster.taskupeatus.RustLocationHelper",
+        jni_str!("startLocationUpdates"),
+        callback_ptr,
+    ) {
         unsafe {
             drop(Box::from_raw(callback_ptr as *mut LocationUpdatesCallback));
         }
-        return Err(Box::new(err));
+        return Err(err);
     }
 
     Ok(callback_ptr)
 }
 
 // pub fn stop_location_updates(callback_ptr: i64) -> Result<(), Box<dyn std::error::Error>> {
-//     let ctx = ndk_context::android_context();
-//     let vm = unsafe { JavaVM::from_raw(ctx.vm().cast())? };
-//     let mut env = vm.attach_current_thread()?;
-//     let context = unsafe { JObject::from_raw(ctx.context().cast()) };
-
-//     let class_loader = env
-//         .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
-//         .l()?;
-//     let helper_class_name = env.new_string("dev.drigster.taskupeatus.RustLocationHelper")?;
-//     let helper_class_obj = env
-//         .call_method(
-//             &class_loader,
-//             "loadClass",
-//             "(Ljava/lang/String;)Ljava/lang/Class;",
-//             &[JValue::Object(&helper_class_name)],
-//         )?
-//         .l()?;
-//     let helper_class = JClass::from(helper_class_obj);
-
-//     env.call_static_method(
-//         helper_class,
-//         "stopLocationUpdates",
-//         "(Landroid/content/Context;J)V",
-//         &[JValue::Object(&context), JValue::Long(callback_ptr)],
+//     call_helper(
+//         "dev.drigster.taskupeatus.RustLocationHelper",
+//         jni_str!("stopLocationUpdates"),
+//         callback_ptr,
 //     )?;
-
 //     unsafe {
 //         drop(Box::from_raw(callback_ptr as *mut LocationUpdatesCallback));
 //     }
-
 //     Ok(())
 // }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_drigster_taskupeatus_RustLocationHelper_onLocationResult(
-    _env: JNIEnv,
-    _class: jni::objects::JClass,
+    _env: EnvUnowned,
+    _class: JClass,
     callback_ptr: i64,
     lat: f64,
     lng: f64,
     accuracy: f32,
 ) {
     unsafe {
-        let callback: Box<Box<dyn FnOnce(Option<(f64, f64, f32)>)>> =
-            Box::from_raw(callback_ptr as *mut _);
+        let callback: Box<LocationResultCallback> = Box::from_raw(callback_ptr as *mut _);
         callback(Some((lat, lng, accuracy)));
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_drigster_taskupeatus_RustLocationHelper_onLocationError(
-    _env: JNIEnv,
-    _class: jni::objects::JClass,
+    _env: EnvUnowned,
+    _class: JClass,
     callback_ptr: i64,
 ) {
     unsafe {
-        let callback: Box<Box<dyn FnOnce(Option<(f64, f64, f32)>)>> =
-            Box::from_raw(callback_ptr as *mut _);
+        let callback: Box<LocationResultCallback> = Box::from_raw(callback_ptr as *mut _);
         callback(None);
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_drigster_taskupeatus_RustLocationHelper_onLocationChanged(
-    _env: JNIEnv,
-    _class: jni::objects::JClass,
+    _env: EnvUnowned,
+    _class: JClass,
     callback_ptr: i64,
     lat: f64,
     lng: f64,
@@ -441,8 +321,8 @@ pub extern "system" fn Java_dev_drigster_taskupeatus_RustLocationHelper_onLocati
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_drigster_taskupeatus_RustPermissionHelper_onPermissionResult(
-    _env: JNIEnv,
-    _class: jni::objects::JClass,
+    _env: EnvUnowned,
+    _class: JClass,
     callback_ptr: i64,
     granted: bool,
 ) {
@@ -455,8 +335,8 @@ pub extern "system" fn Java_dev_drigster_taskupeatus_RustPermissionHelper_onPerm
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_drigster_taskupeatus_RustLocationHelper_onLocationEnabledChanged(
-    _env: JNIEnv,
-    _class: jni::objects::JClass,
+    _env: EnvUnowned,
+    _class: JClass,
     callback_ptr: i64,
     enabled: bool,
 ) {
