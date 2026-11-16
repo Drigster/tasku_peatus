@@ -291,8 +291,8 @@ pub async fn get_routes() -> Result<Routes, Box<dyn std::error::Error>> {
     // `get_last_modified_version` is a synchronous `ureq::head()`; running it
     // directly in the async body stalled the UI task at startup.
     let target_last_modified = blocking::unblock(get_last_modified_version).await;
-    println!("Current routes last modified: {current_last_modified:?}");
-    println!("Target routes last modified: {target_last_modified:?}");
+    log::debug!("Current routes last modified: {current_last_modified:?}");
+    log::debug!("Target routes last modified: {target_last_modified:?}");
     if get_routes_file_path().exists() && current_last_modified >= target_last_modified {
         let routes = blocking::unblock(|| {
             let bytes = match fs::read(get_routes_file_path()) {
@@ -310,7 +310,7 @@ pub async fn get_routes() -> Result<Routes, Box<dyn std::error::Error>> {
 
         match routes {
             Ok(routes) => return Ok(routes),
-            Err(err) => println!("Error reading routes: {err}"),
+            Err(err) => log::error!("Error reading routes: {err}"),
         }
     }
 
@@ -1036,7 +1036,7 @@ fn explode_times(encoded_times: &str) -> ExplodedTimes {
     }
 
     if !malformed_tokens.is_empty() {
-        eprintln!(
+        log::warn!(
             "explode_times: malformed token(s): {}",
             malformed_tokens.join(", ")
         );

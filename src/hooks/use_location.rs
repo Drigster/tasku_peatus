@@ -41,13 +41,14 @@ pub fn use_location(radio: &Radio<Data, DataChannel>) {
             use crate::utils::jni_utils::start_location_enabled_updates;
 
             match start_location_enabled_updates(move |enabled| {
+                log::info!("Location enabled changed: {enabled}");
                 let _ = state_tx_clone.unbounded_send(ChannelSend::LocationEnabledUpdate(enabled));
             }) {
                 Ok(callback_ptr) => {
-                    println!("[Print] Location enabled watcher started: {callback_ptr}");
+                    log::info!("Location enabled watcher started: {callback_ptr}");
                 }
                 Err(e) => {
-                    println!("[Print] Failed to start location enabled watcher: {e}");
+                    log::error!("Failed to start location enabled watcher: {e}");
                 }
             }
         });
@@ -65,26 +66,26 @@ pub fn use_location(radio: &Radio<Data, DataChannel>) {
                 match check_and_request_permissions().await {
                     Ok(true) => {
                         match start_location_updates(move |(lat, lng, accuracy)| {
-                            println!(
-                                "[Print] Location changed: lat={lat}, lng={lng}, accuracy={accuracy}"
+                            log::debug!(
+                                "Location changed: lat={lat}, lng={lng}, accuracy={accuracy}"
                             );
                             let _ =
                                 state_tx.unbounded_send(ChannelSend::LocationUpdate((lat, lng)));
                         }) {
                             Ok(callback_ptr) => {
-                                println!("[Print] Location updates started: {callback_ptr}");
+                                log::info!("Location updates started: {callback_ptr}");
                             }
                             Err(e) => {
-                                println!("[Print] Error starting location updates: {e}");
+                                log::error!("Error starting location updates: {e}");
                             }
                         }
                     }
                     Ok(false) => {
-                        println!("[Print] Permissions: false");
+                        log::warn!("Permissions: false");
                         *is_location_enabled.write() = false;
                     }
                     Err(e) => {
-                        println!("[Print] Error checking permissions: {e}");
+                        log::error!("Error checking permissions: {e}");
                     }
                 }
             }
@@ -94,17 +95,17 @@ pub fn use_location(radio: &Radio<Data, DataChannel>) {
                 use crate::utils::geoclue::start_location_updates;
 
                 match start_location_updates(move |(lat, lng, accuracy)| {
-                    println!("[Print] Location changed: lat={lat}, lng={lng}, accuracy={accuracy}");
+                    log::debug!("Location changed: lat={lat}, lng={lng}, accuracy={accuracy}");
                     let _ = state_tx.unbounded_send(ChannelSend::LocationUpdate((lat, lng)));
                 })
                 .await
                 {
                     Ok(callback_ptr) => {
                         *is_location_enabled.write() = true;
-                        println!("[Print] Location updates started: {callback_ptr:?}");
+                        log::info!("Location updates started: {callback_ptr:?}");
                     }
                     Err(e) => {
-                        println!("[Print] Error starting location updates: {e}");
+                        log::error!("Error starting location updates: {e}");
                     }
                 }
             }

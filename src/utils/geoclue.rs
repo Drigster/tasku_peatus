@@ -48,10 +48,10 @@ trait Position {
 
 #[allow(dead_code)]
 pub async fn get_location() -> Result<(f64, f64), Box<dyn std::error::Error>> {
-    println!("Get location");
+    log::debug!("Get location");
     // Session bus, run as defaultuser
     let conn = Connection::session().await?;
-    println!("Connection: {:?}", conn);
+    log::debug!("Connection: {:?}", conn);
 
     // Activate the master (this creates/keeps client0 alive)
     let client_body = conn
@@ -68,19 +68,19 @@ pub async fn get_location() -> Result<(f64, f64), Box<dyn std::error::Error>> {
     let client_path: OwnedObjectPath = client_body.deserialize()?;
 
     let client = MasterClientProxy::new(&conn, client_path.clone()).await?;
-    println!("Client: {:?}", client);
+    log::debug!("Client: {:?}", client);
     let requirments = client.set_requirements(6, 0, true, 1023).await;
 
-    println!("Requirements: {requirments:?}");
+    log::debug!("Requirements: {requirments:?}");
 
     let pos_start = client.position_start().await;
 
-    println!("Position start: {pos_start:?}");
+    log::debug!("Position start: {pos_start:?}");
 
     let pos = PositionProxy::new(&conn, client_path).await?;
     let position = pos.get_position().await?;
 
-    println!("Position: {:?}", position);
+    log::debug!("Position: {:?}", position);
 
     Ok((0.0, 0.0))
 }
@@ -107,15 +107,15 @@ where
     let client_path: OwnedObjectPath = client_body.deserialize()?;
 
     let client = MasterClientProxy::new(&conn, client_path.clone()).await?;
-    println!("Client: {:?}", client);
+    log::debug!("Client: {:?}", client);
 
     let requirments = client.set_requirements(6, 2, true, 1023).await;
-    println!("Requirements: {requirments:?}");
+    log::debug!("Requirements: {requirments:?}");
 
     let pos = PositionProxy::new(&conn, client_path).await?;
 
     let pos_start = client.position_start().await;
-    println!("Position start: {pos_start:?}");
+    log::debug!("Position start: {pos_start:?}");
 
     let mut updates = pos.receive_position_changed().await?;
     while let Some(signal) = updates.next().await {

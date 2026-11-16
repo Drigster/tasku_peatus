@@ -19,7 +19,14 @@ fn android_main(droid_app: AndroidApp) {
     use winit::{event_loop::EventLoop, platform::android::EventLoopBuilderExtAndroid};
 
     android_logger::init_once(
-        android_logger::Config::default().with_max_level(log::LevelFilter::Debug),
+        android_logger::Config::default()
+            .with_tag("tasku_peatus")
+            .with_max_level(log::LevelFilter::Debug)
+            .with_filter(
+                android_logger::FilterBuilder::new()
+                    .parse("info,tasku_peatus=debug")
+                    .build(),
+            ),
     );
 
     let event_loop = EventLoop::<NativeEvent>::with_user_event()

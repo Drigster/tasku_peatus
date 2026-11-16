@@ -42,8 +42,8 @@ pub async fn get_stops() -> Result<HashMap<String, Stop>, Box<dyn std::error::Er
     // `get_last_modified_version` is a synchronous `ureq::head()`; running it
     // directly in the async body stalled the UI task at startup.
     let target_last_modified = blocking::unblock(get_last_modified_version).await;
-    println!("Current stops last modified: {current_last_modified:?}");
-    println!("Target stops last modified: {target_last_modified:?}");
+    log::debug!("Current stops last modified: {current_last_modified:?}");
+    log::debug!("Target stops last modified: {target_last_modified:?}");
     if get_stops_file_path().exists() && current_last_modified >= target_last_modified {
         let stops = blocking::unblock(|| {
             let bytes = match fs::read(get_stops_file_path()) {
@@ -61,7 +61,7 @@ pub async fn get_stops() -> Result<HashMap<String, Stop>, Box<dyn std::error::Er
 
         match stops {
             Ok(stops) => return Ok(stops),
-            Err(err) => println!("Error reading stops: {err}"),
+            Err(err) => log::error!("Error reading stops: {err}"),
         }
     }
     let stops = blocking::unblock(|| {
@@ -178,20 +178,14 @@ pub fn parse_stops(data: String) -> HashMap<String, Stop> {
         let lat = match parts[lat_index].parse::<u64>() {
             Ok(lat) => lat as f64 / 100_000.0,
             Err(_) => {
-                println!(
-                    "[Print] Error parsing: {} lat: {}",
-                    siri_id, parts[lat_index]
-                );
+                log::warn!("Error parsing: {} lat: {}", siri_id, parts[lat_index]);
                 continue;
             }
         };
         let lon = match parts[lon_index].parse::<u64>() {
             Ok(lon) => lon as f64 / 100_000.0,
             Err(_) => {
-                println!(
-                    "[Print] Error parsing: {} lon: {}",
-                    siri_id, parts[lon_index]
-                );
+                log::warn!("Error parsing: {} lon: {}", siri_id, parts[lon_index]);
                 continue;
             }
         };
