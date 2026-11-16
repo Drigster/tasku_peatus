@@ -3,7 +3,10 @@
 use smol::stream::{self, Stream, StreamExt};
 use zbus::{Connection, OwnedObjectPath, proxy};
 
-const ACCURACY_DETAILED: i32 = 6;
+/// Accept any provider. Requiring "detailed" (6) limits GeoClue to GPS, which
+/// can take minutes for a first fix; with "none" it starts from network
+/// positioning and switches to GPS once it has a fix.
+const ACCURACY_NONE: i32 = 0;
 const MIN_UPDATE_SECONDS: i32 = 2;
 const ALL_RESOURCES: i32 = 1023;
 const FIELDS_LAT_LON: i32 = 0b011;
@@ -73,7 +76,7 @@ pub async fn start_location_updates()
     let client_path = MasterProxy::new(&conn).await?.create().await?;
     let client = MasterClientProxy::new(&conn, client_path.clone()).await?;
     client
-        .set_requirements(ACCURACY_DETAILED, MIN_UPDATE_SECONDS, true, ALL_RESOURCES)
+        .set_requirements(ACCURACY_NONE, MIN_UPDATE_SECONDS, true, ALL_RESOURCES)
         .await?;
 
     let position = PositionProxy::new(&conn, client_path).await?;
