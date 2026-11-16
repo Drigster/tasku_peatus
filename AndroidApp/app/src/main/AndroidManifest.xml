@@ -24,7 +24,7 @@
             </intent-filter>
             <meta-data
                 android:name="android.app.lib_name"
-                android:value="android_example" />
+                android:value="tasku_peatus" />
         </activity>
 
         <activity

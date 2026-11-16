@@ -6,7 +6,7 @@ pub fn use_location(radio: &Radio<Data, DataChannel>) {
     let mut is_location_enabled = radio.slice_mut(DataChannel::LocationEnabledUpdate, |s| {
         &mut s.is_location_enabled
     });
-    #[cfg_attr(feature = "geoclue", allow(unused_mut))]
+    #[cfg_attr(any(feature = "geoclue", target_os = "android"), allow(unused_mut))]
     let mut location = radio.slice_mut(DataChannel::LocationUpdate, |s| &mut s.location);
     #[allow(unused)]
     let state_tx = radio.read().state_tx.clone().unwrap();
@@ -59,21 +59,11 @@ pub fn use_location(radio: &Radio<Data, DataChannel>) {
             {
                 use crate::launch_config::ChannelSend;
                 use crate::utils::jni_utils::{
-                    check_and_request_permissions, get_last_known_location, start_location_updates,
+                    check_and_request_permissions, start_location_updates,
                 };
 
                 match check_and_request_permissions().await {
                     Ok(true) => {
-                        match get_last_known_location() {
-                            Ok(last_known_location) => {
-                                println!("[Print] Last Known Location: {:?}", last_known_location);
-                                *location.write() =
-                                    Some((last_known_location.0, last_known_location.1));
-                            }
-                            Err(e) => {
-                                println!("[Print] Error getting location: {e}");
-                            }
-                        }
                         match start_location_updates(move |(lat, lng, accuracy)| {
                             println!(
                                 "[Print] Location changed: lat={lat}, lng={lng}, accuracy={accuracy}"

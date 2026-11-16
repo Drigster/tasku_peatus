@@ -4,17 +4,15 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Looper
 import java.util.concurrent.ConcurrentHashMap
-import java.util.function.Consumer
 
 object RustLocationHelper {
     init {
         try {
-            System.loadLibrary("android_example")
+            System.loadLibrary("tasku_peatus")
         } catch (_: UnsatisfiedLinkError) {
         }
     }
@@ -22,34 +20,6 @@ object RustLocationHelper {
     private val LOCATION_LISTENERS = ConcurrentHashMap<Long, LocationListener>()
     private val LOCATION_STATE_RECEIVERS = ConcurrentHashMap<Long, BroadcastReceiver>()
     private val LOCATION_STATE_LAST_EMITTED = ConcurrentHashMap<Long, Boolean>()
-
-    @JvmStatic
-    fun createLocationConsumer(callbackPtr: Long): Consumer<Location> {
-        return Consumer { location ->
-            if (location == null) {
-                onLocationError(callbackPtr)
-                return@Consumer
-            }
-
-            onLocationResult(
-                callbackPtr,
-                location.latitude,
-                location.longitude,
-                location.accuracy
-            )
-        }
-    }
-
-    @JvmStatic
-    external fun onLocationResult(
-        callbackPtr: Long,
-        lat: Double,
-        lng: Double,
-        accuracy: Float
-    )
-
-    @JvmStatic
-    external fun onLocationError(callbackPtr: Long)
 
     @JvmStatic
     external fun onLocationChanged(
@@ -68,10 +38,6 @@ object RustLocationHelper {
             ?: throw IllegalStateException("LocationManager is unavailable")
 
         val listener = LocationListener { location ->
-            if (location == null) {
-                return@LocationListener
-            }
-
             onLocationChanged(
                 callbackPtr,
                 location.latitude,

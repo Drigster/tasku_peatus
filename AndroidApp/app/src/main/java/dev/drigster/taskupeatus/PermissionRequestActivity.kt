@@ -10,10 +10,10 @@ class PermissionRequestActivity : ComponentActivity() {
     private var resultDelivered = false
     private var requestLaunched = false
 
-    private val permissionLauncher: ActivityResultLauncher<String> =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+    private val permissionLauncher: ActivityResultLauncher<Array<String>> =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
             resultDelivered = true
-            RustPermissionHelper.onPermissionResult(callbackPtr, isGranted)
+            RustPermissionHelper.onPermissionResult(callbackPtr, results.values.any { it })
             finish()
         }
 
@@ -31,7 +31,7 @@ class PermissionRequestActivity : ComponentActivity() {
         super.onStart()
         if (callbackPtr != 0L && !requestLaunched && !resultDelivered) {
             requestLaunched = true
-            permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+            permissionLauncher.launch(RustPermissionHelper.LOCATION_PERMISSIONS)
         }
     }
 

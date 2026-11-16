@@ -11,7 +11,6 @@ use std::sync::{LazyLock, Mutex};
 
 type LocationUpdatesCallback = Box<dyn Fn((f64, f64, f32)) + Send + Sync>;
 type LocationEnabledCallback = Box<dyn Fn(bool) + Send + Sync>;
-type LocationResultCallback = Box<dyn FnOnce(Option<(f64, f64, f32)>)>;
 
 static PERMISSION_REQUEST_ID: AtomicI64 = AtomicI64::new(1);
 static PERMISSION_REQUESTS: LazyLock<Mutex<HashMap<i64, std::sync::mpsc::Sender<bool>>>> =
@@ -85,20 +84,17 @@ fn call_helper(
 
 pub fn get_cache_dir_android() -> Result<PathBuf, Box<dyn std::error::Error>> {
     with_android_env(|env, context| {
-        let file = env
-            .call_method(
-                context,
-                jni_str!("getCacheDir"),
-                jni_sig!("()Ljava/io/File;"),
-                &[],
-            )?
-            .l()?;
+        let class = load_app_class(
+            env,
+            context,
+            "dev.drigster.taskupeatus.AndroidStorageHelper",
+        )?;
         let path = env
-            .call_method(
-                &file,
-                jni_str!("getAbsolutePath"),
-                jni_sig!("()Ljava/lang/String;"),
-                &[],
+            .call_static_method(
+                &class,
+                jni_str!("getCacheDir"),
+                jni_sig!("(Landroid/content/Context;)Ljava/lang/String;"),
+                &[JValue::Object(context)],
             )?
             .l()?;
         let path = env.cast_local::<JString>(path)?;
@@ -171,46 +167,6 @@ pub async fn check_and_request_permissions() -> Result<bool, Box<dyn std::error:
     Ok(permission_result)
 }
 
-pub fn get_last_known_location() -> Result<(f64, f64), Box<dyn std::error::Error>> {
-    let location = with_android_env(|env, context| {
-        let location_service = env.new_string("location")?;
-        let location_manager = env
-            .call_method(
-                context,
-                jni_str!("getSystemService"),
-                jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
-                &[JValue::Object(&location_service)],
-            )?
-            .l()?;
-
-        for provider in ["gps", "network"] {
-            let provider = env.new_string(provider)?;
-            let location = env
-                .call_method(
-                    &location_manager,
-                    jni_str!("getLastKnownLocation"),
-                    jni_sig!("(Ljava/lang/String;)Landroid/location/Location;"),
-                    &[JValue::Object(&provider)],
-                )?
-                .l()?;
-
-            if !location.is_null() {
-                let lat = env
-                    .call_method(&location, jni_str!("getLatitude"), jni_sig!("()D"), &[])?
-                    .d()?;
-                let lng = env
-                    .call_method(&location, jni_str!("getLongitude"), jni_sig!("()D"), &[])?
-                    .d()?;
-                return Ok(Some((lat, lng)));
-            }
-        }
-
-        Ok(None)
-    })?;
-
-    location.ok_or_else(|| "No location available".into())
-}
-
 pub fn start_location_enabled_updates<F>(callback: F) -> Result<i64, Box<dyn std::error::Error>>
 where
     F: Fn(bool) + Send + Sync + 'static,
@@ -276,33 +232,6 @@ where
 //     }
 //     Ok(())
 // }
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_drigster_taskupeatus_RustLocationHelper_onLocationResult(
-    _env: EnvUnowned,
-    _class: JClass,
-    callback_ptr: i64,
-    lat: f64,
-    lng: f64,
-    accuracy: f32,
-) {
-    unsafe {
-        let callback: Box<LocationResultCallback> = Box::from_raw(callback_ptr as *mut _);
-        callback(Some((lat, lng, accuracy)));
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_drigster_taskupeatus_RustLocationHelper_onLocationError(
-    _env: EnvUnowned,
-    _class: JClass,
-    callback_ptr: i64,
-) {
-    unsafe {
-        let callback: Box<LocationResultCallback> = Box::from_raw(callback_ptr as *mut _);
-        callback(None);
-    }
-}
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_drigster_taskupeatus_RustLocationHelper_onLocationChanged(
