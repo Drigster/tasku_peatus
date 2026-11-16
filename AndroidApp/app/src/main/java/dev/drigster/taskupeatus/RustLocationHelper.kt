@@ -68,7 +68,9 @@ object RustLocationHelper {
                 )
             }
 
-            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            // Registered even while disabled, so updates start once location is turned on.
+            val providers = locationManager.allProviders
+            if (LocationManager.GPS_PROVIDER in providers) {
                 locationManager.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER,
                     1000L,
@@ -78,7 +80,7 @@ object RustLocationHelper {
                 )
             }
 
-            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+            if (LocationManager.NETWORK_PROVIDER in providers) {
                 locationManager.requestLocationUpdates(
                     LocationManager.NETWORK_PROVIDER,
                     2000L,
