@@ -3,7 +3,7 @@ use crate::utils::jni_utils::{
     check_and_request_permissions, start_location_enabled_updates, start_location_updates,
 };
 
-/// Android's `LocationManager`, through the Kotlin helpers in `AndroidApp`.
+/// Android's `LocationManager`, through the Kotlin helpers in `android/app`.
 pub struct AndroidLocation;
 
 impl LocationBackend for AndroidLocation {

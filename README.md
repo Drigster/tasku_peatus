@@ -1,70 +1,26 @@
-# Experimental Android Support
+# Tasku Peatus
 
-> [!WARNING]
-> Android support is highly experimental. Soft keyboard and IME support are not yet implemented, so Input components and anything relying on keyboard input will not work properly on Android.
+Shows upcoming public transport departures from the stops around you in Tallinn, built
+with [Freya](https://freyaui.dev). Timetables come from
+[transport.tallinn.ee](https://transport.tallinn.ee), with live departure times layered
+on top.
 
-## Prerequisites
+## Platforms
 
-### Android SDK
+| Platform | Location source | Build |
+|---|---|---|
+| Desktop | Fixed position in central Tallinn | `cargo run` |
+| Desktop with GeoClue 1 | GeoClue 1 on the session bus | `cargo run --features geoclue` |
+| Android | `LocationManager` | [`android/`](android/README.md) |
+| Sailfish OS | GeoClue 1 | [`sailfish/`](sailfish/README.md) |
 
-Install [Android Studio](https://developer.android.com/studio) (recommended) or the [Android command-line tools](https://developer.android.com/studio#command-line-tools-only). API level 36 is required.
+Logs go through the `log` crate; on desktop, set `RUST_LOG=tasku_peatus=debug` to see them.
 
-Set the following environment variables:
+## Features
 
-```sh
-export ANDROID_HOME="<PATH_TO_SDK>"
-```
-
-If you installed Android Studio, the SDK is typically at `~/Android/Sdk` (Linux), `~/Library/Android/sdk` (macOS), or `%LOCALAPPDATA%\Android\Sdk` (Windows).
-
-### Android NDK (r26d)
-
-Download and extract the NDK for your platform:
-
-- [Linux](https://dl.google.com/android/repository/android-ndk-r26d-linux.zip)
-- [macOS](https://dl.google.com/android/repository/android-ndk-r26d-darwin.dmg)
-- [Windows](https://dl.google.com/android/repository/android-ndk-r26d-windows.zip)
-
-Then set the following environment variables:
-
-```sh
-export ANDROID_NDK_HOME="<PATH_TO_NDK>/android-ndk-r26d"
-export ANDROID_NDK="<PATH_TO_NDK>/android-ndk-r26d"
-```
-
-### Rust tooling
-
-Install `cargo-ndk` and the required Android targets:
-
-```sh
-cargo install cargo-ndk
-rustup target add aarch64-linux-android x86_64-linux-android
-```
-
-## Building for Android
-
-### With Android Studio
-
-Open the `./AndroidApp/` project in Android Studio and click **Run**. If you have a device connected with ADB debugging enabled, the app will launch after a successful build.
-
-### Without Android Studio
-
-From the `./AndroidApp/` directory:
-
-```sh
-./gradlew assembleDebug
-```
-
-The APK will be at `./AndroidApp/app/build/outputs/apk/debug/app-debug.apk`. Install it via `adb install` or by copying it to your device.
-
-## Running on Desktop
-
-This example also compiles as a regular desktop app:
-
-```sh
-cargo run
-```
-
-## Attribution
-
-This experiment is inspired by an older attempt to add Android support to Freya by [rebecca-src](https://github.com/rebecca-src). You can see their original branch here: https://github.com/rebecca-src/freya/tree/experiment/android/examples/android
+| Feature | Effect |
+|---|---|
+| `geoclue` | Location from GeoClue 1 instead of the fixed desktop position |
+| `scaled` | Fixed 2.375 scale factor, for running on a phone display |
+| `devtools` | Freya developer tools |
+| `hotreload` | Freya hot reload |

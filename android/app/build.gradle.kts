@@ -44,7 +44,7 @@ tasks.register<Exec>("buildRustLibrary") {
     environment("ANDROID_HOME", androidHome)
     environment("ANDROID_JAR", "$androidHome/platforms/android-36/android.jar")
     commandLine("cargo", "ndk",
-        "-o", "AndroidApp/app/src/main/jniLibs/",
+        "-o", "android/app/src/main/jniLibs/",
         "-t", "arm64-v8a",
         "-t", "x86_64-linux-android",
         "--platform", "31",

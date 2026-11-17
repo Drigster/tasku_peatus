@@ -22,6 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AndroidApp"
+rootProject.name = "tasku_peatus"
 include(":app")
  
