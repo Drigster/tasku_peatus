@@ -6,6 +6,7 @@ mod components;
 mod hooks;
 mod launch_config;
 mod layouts;
+mod location;
 mod pages;
 mod utils;
 
