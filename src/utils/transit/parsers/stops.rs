@@ -104,12 +104,14 @@ pub fn get_stops_in_radius(
     let center = Point::new(center_lon, center_lat);
 
     for stop in stops.values() {
-        if stop.stop_id.trim().is_empty() {
+        // stops.txt lists every stop ever defined, including temporary and
+        // retired ones; about two thirds appear in no route, so they'd only
+        // show "No departures".
+        if stop.stop_id.trim().is_empty() || stop.routes.is_empty() {
             continue;
         };
 
         if (stop.lat - center_lat).abs() <= lat_delta && (stop.lon - center_lon).abs() <= lon_delta
-        //&& stop.transports.is_empty() == false
         {
             let distance = Haversine.distance(center, Point::new(stop.lon, stop.lat));
 
